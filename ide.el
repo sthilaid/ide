@@ -8,6 +8,7 @@
 (custom-set-variables '(ide-default-current-project "ide.ell"))
 
 (defvar 'ide-current-project)
+(setq ide-data (cons '() '()))
 
 (defun ide-change-project (solution-file)
   (interactive (list (if (and (not (string= ide-default-current-project ""))
@@ -16,6 +17,7 @@
 					   (ido-read-file-name "solution file: "))))
 
   (setq ide-current-project solution-file)
+  (ide-parse-current-solution)
   (message (concat "Now using project file: " (file-name-nondirectory solution-file))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -27,35 +29,66 @@
 (defun ide-is-xcode-solution (file)
   nil)
 
-(defun ide-is-text-solution (file)
-  (let ((valid? t)
-		(buffer (get-buffer-create (concat "*temp" (number-to-string (random)) "*"))))
-       (with-current-buffer buffer
-         (unwind-protect
-             (progn (insert-file-contents file)
-					(beginning-of-buffer)
-					(while (and valid? (< (point) (point-max)))
-					  (beginning-of-line)
-					  (set-mark (point))
-					  (end-of-line)
-					  (let ((file-on-line (buffer-substring (region-beginning) (region-end))))
-						(setq valid? (and valid? (file-exists-p file-on-line)))
-						;(if (not valid?) (error (concat "invalid file: " file-on-line)))
-						)
-					  (forward-line)))
-		   (kill-buffer buffer)))
-	   valid?))
+(defun ide-data-file-map (data)
+  (car data))
 
-(defun ide-parse-text-solution (file)
-  )
+(defun ide-data-file-paths (data)
+  (cdr data))
+
+(defun ide-try-to-parse-text-solution-internal (file-on-line line-num file-map)
+  (let* ((file-symbol (make-symbol (file-name-nondirectory file-on-line)))
+		   (file-map-cell (assoc file-symbol file-map)))
+	  (if file-map-cell
+		  (progn
+			(setcdr file-map-cell (vconcat (vector line-num) (cdr file-map-cell)))
+			file-map)
+		(cons (cons file-symbol (vector line-num)) file-map))))
+
+(defun ide-try-to-parse-text-solution-loop (is-valid? file-map file-paths line-num)
+  (if (not is-valid?)
+	  (vector nil '() '() 0)
+	(if (>= (point) (point-max))
+		(vector t file-map file-paths line-num)
+	  (progn
+		(beginning-of-line)
+		(set-mark (point))
+		(end-of-line)
+		(let* ((file-on-line (buffer-substring (region-beginning) (region-end)))
+			   (is-file-on-line-valid (file-exists-p file-on-line)))
+		  (forward-line)
+		  (if (not is-file-on-line-valid)
+			  (vector nil '() '() 0)
+			(let ((new-file-map (ide-try-to-parse-text-solution-internal file-on-line line-num file-map)))
+			  (if (consp file-paths)
+				  (setcdr file-paths (cons file-on-line '()))
+				(setq file-paths (list file-on-line)))
+			  (ide-try-to-parse-text-solution-loop is-valid? new-file-map file-paths (+ line-num 1)))))))))
+
+(defun ide-try-to-parse-text-solution (file)
+  (let ((buffer (get-buffer-create (concat "*temp" (number-to-string (random)) "*"))))
+	(with-current-buffer buffer
+	  (unwind-protect
+		  (progn (insert-file-contents file)
+				 (beginning-of-buffer)
+				 (let* ((loop-result (ide-try-to-parse-text-solution-loop 't '() '() 0))
+						(is-valid? (elt loop-result 0))
+						(file-map (elt loop-result 1))
+						(file-paths (elt loop-result 2)))
+				   (if is-valid?
+					   (setq ide-data (cons file-map file-paths))
+					 (setq ide-data nil))))
+		(kill-buffer buffer)))
+	ide-data))
+
+(ide-try-to-parse-text-solution "~/code/UnrealEngine/engine-files")
 
 (defun ide-parse-current-solution ()
   (if (not (boundp 'ide-current-project))
 	  (error "need to setup the current project first..."))
   (cond
-   ((ide-is-vs-solution ide-current-project)	(ide-parse-vs-solution ide-current-project))
-   ((ide-is-xcode-solution ide-current-project) (ide-parse-xcode-solution ide-current-project))
-   ((ide-is-text-solution ide-current-project)	(ide-parse-text-solution ide-current-project))
+   ((ide-is-vs-solution ide-current-project)				(ide-parse-vs-solution ide-current-project))
+   ((ide-is-xcode-solution ide-current-project)				(ide-parse-xcode-solution ide-current-project))
+   ((ide-try-to-parse-text-solution ide-current-project)	t)
    (t (error (concat "unsupported solution type for project file: " (file-name-nondirectory ide-current-project))))))
 
 
