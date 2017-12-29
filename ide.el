@@ -1,4 +1,3 @@
-
 (defcustom ide-default-current-project ""
   "The name of your default current project file"
   :type 'string
@@ -7,7 +6,10 @@
 ;; temp, testing
 (custom-set-variables '(ide-default-current-project "ide.ell"))
 
-(defvar 'ide-current-project)
+(defvar ide-current-project)
+(setq ide-current-project "")
+
+(defvar ide-data)
 (setq ide-data (cons '() '()))
 
 (defun ide-change-project (solution-file)
@@ -26,7 +28,13 @@
 (defun ide-is-vs-solution (file)
   nil)
 
+(defun ide-parse-vs-solution (ide-current-project)
+  nil)
+
 (defun ide-is-xcode-solution (file)
+  nil)
+
+(defun ide-parse-xcode-solution (ide-current-project)
   nil)
 
 (defun ide-data-file-map (data)
@@ -45,31 +53,32 @@
 		(cons (cons file-symbol (vector line-num)) file-map))))
 
 (defun ide-try-to-parse-text-solution-loop (is-valid? file-map file-paths line-num)
-  (if (not is-valid?)
-	  (vector nil '() '() 0)
-	(if (>= (point) (point-max))
-		(vector t file-map file-paths line-num)
-	  (progn
-		(beginning-of-line)
-		(set-mark (point))
-		(end-of-line)
-		(let* ((file-on-line (buffer-substring (region-beginning) (region-end)))
-			   (is-file-on-line-valid (file-exists-p file-on-line)))
-		  (forward-line)
-		  (if (not is-file-on-line-valid)
-			  (vector nil '() '() 0)
-			(let ((new-file-map (ide-try-to-parse-text-solution-internal file-on-line line-num file-map)))
-			  (if (consp file-paths)
-				  (setcdr file-paths (cons file-on-line '()))
-				(setq file-paths (list file-on-line)))
-			  (ide-try-to-parse-text-solution-loop is-valid? new-file-map file-paths (+ line-num 1)))))))))
+  (cl-loop until (not is-valid?)
+		   until (>= (point) (point-max))
+		   do (progn
+				(beginning-of-line)
+				(set-mark (point))
+				(end-of-line)
+				(let* ((file-on-line (buffer-substring (region-beginning) (region-end)))
+					   (is-file-on-line-valid (file-exists-p file-on-line)))
+				  (setq is-valid? (and is-valid? is-file-on-line-valid))
+				  (if (not is-valid?)
+					  (debug))
+				  (forward-line)
+				  (if is-valid?
+					  (let ((new-file-map (ide-try-to-parse-text-solution-internal file-on-line line-num file-map)))
+						(setq file-map new-file-map)
+						(setq file-paths (cons file-on-line file-paths)) ;; needs to be reversed!
+						(setq line-num (+ line-num 1)))))))
+  (setq file-paths (nreverse file-paths))
+  (vector is-valid? file-map file-paths))
 
 (defun ide-try-to-parse-text-solution (file)
   (let ((buffer (get-buffer-create (concat "*temp" (number-to-string (random)) "*"))))
 	(with-current-buffer buffer
 	  (unwind-protect
 		  (progn (insert-file-contents file)
-				 (beginning-of-buffer)
+				 (goto-char (point-min))
 				 (let* ((loop-result (ide-try-to-parse-text-solution-loop 't '() '() 0))
 						(is-valid? (elt loop-result 0))
 						(file-map (elt loop-result 1))
@@ -80,7 +89,7 @@
 		(kill-buffer buffer)))
 	ide-data))
 
-(ide-try-to-parse-text-solution "~/code/UnrealEngine/engine-files")
+;;(ide-try-to-parse-text-solution "~/code/UnrealEngine/engine-files")
 
 (defun ide-parse-current-solution ()
   (if (not (boundp 'ide-current-project))
