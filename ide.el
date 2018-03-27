@@ -45,15 +45,19 @@
 												  (file-name-nondirectory ide-current-project)
 												"")))
 						 (ido-read-file-name "solution file: " default-path default-project t default-project)))))
-  (if (not (file-exists-p solution-file))
-	  (error "invalid solution file, does not exists..."))
-  
-  (let ((absolute-solution-file (expand-file-name solution-file)))
-	(setq ide-current-project absolute-solution-file)
-	(ide-parse-current-solution)
-	(let ((file-count (ide-data-size)))
-	  (message (concat "Now using project file: " (file-name-nondirectory absolute-solution-file)
-					   " [parsed " (number-to-string file-count) " files]")))))
+  (condition-case ex
+	  (progn
+		(if (not (file-exists-p solution-file))
+			(error "invalid solution file, does not exists..."))
+		
+		(let ((absolute-solution-file (expand-file-name solution-file)))
+		  (setq ide-current-project absolute-solution-file)
+		  (ide-parse-current-solution)
+		  (let ((file-count (ide-data-size)))
+			(message (concat "Now using project file: " (file-name-nondirectory absolute-solution-file)
+							 " [parsed " (number-to-string file-count) " files]")))))
+   ('error (ide-reset-data)
+		   (message (cadr ex)))))
 
 ;;(ide-change-project "c:/Users/david/AppData/Roaming/UnrealEngine/UE4.sln")
 
@@ -85,6 +89,24 @@
 
 ;;(ide-get-substrings "test \"hello.vcxproj\" \"test\"")
 
+(defun ide-parse-file-by-line (file line-parser-function)
+  (let ((buffer (get-buffer-create (concat "*temp-" file " " (number-to-string (random)) "*"))))
+	(with-current-buffer buffer
+	  (unwind-protect
+		  (progn (insert-file-contents file)
+				 (goto-char (point-min))
+				 (cl-loop until (>= (point) (point-max))
+						  for line-num = 0 then (+ line-num 1)
+						  do (progn (beginning-of-line)
+									(set-mark (point))
+									(end-of-line)
+									(let ((line-str (buffer-substring (region-beginning) (region-end))))
+									  (funcall line-parser-function line-str))
+									(forward-line)
+									line-num)))
+		(kill-buffer buffer)
+		))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide visual studio functions
 
@@ -106,24 +128,6 @@
 	project-file))
 
 ;;(ide-get-line-vs-project "dasfd \"hmmm.vsproj\"test \"hello.vcxproj\" \"test\"")
-
-(defun ide-parse-file-by-line (file line-parser-function)
-  (let ((buffer (get-buffer-create (concat "*temp-" file " " (number-to-string (random)) "*"))))
-	(with-current-buffer buffer
-	  (unwind-protect
-		  (progn (insert-file-contents file)
-				 (goto-char (point-min))
-				 (cl-loop until (>= (point) (point-max))
-						  for line-num = 0 then (+ line-num 1)
-						  do (progn (beginning-of-line)
-									(set-mark (point))
-									(end-of-line)
-									(let ((line-str (buffer-substring (region-beginning) (region-end))))
-									  (funcall line-parser-function line-str))
-									(forward-line)
-									line-num)))
-		(kill-buffer buffer)
-		))))
 
 (defun ide-accumulate-vs-project-file (project-file-path line-str)
   (if (or (string-match "ClInclude" line-str)
@@ -201,23 +205,23 @@
   (setq file-paths (nreverse file-paths))
   (vector is-valid? file-map file-paths))
 
-(defun ide-try-to-parse-text-solution (file)
-  (let ((buffer (get-buffer-create (concat "*temp" (number-to-string (random)) "*"))))
-	(with-current-buffer buffer
-	  (unwind-protect
-		  (progn (insert-file-contents file)
-				 (goto-char (point-min))
-				 (let* ((loop-result (ide-try-to-parse-text-solution-loop 't '() '() 0))
-						(is-valid? (elt loop-result 0))
-						(file-map (elt loop-result 1))
-						(file-paths (elt loop-result 2)))
-				   (if is-valid?
-					   (setq ide-data (cons file-map file-paths))
-					 (setq ide-data nil))))
-		(kill-buffer buffer)))
-	ide-data))
+(defun ide-try-to-parse-text-solution (sln-file)
+  (let ((sln-path (file-name-directory sln-file)))
+   (ide-parse-file-by-line
+	sln-file
+	(lambda (line-str)
+	  (let* ((file (if (file-name-absolute-p line-str)
+					   line-str
+					 (concat sln-path line-str)))
+			 (file-full-path (expand-file-name file))
+			 (file-name (file-name-nondirectory file)))
+		(if (not (file-exists-p file-full-path))
+			(error (concat "invalid text solution, unexistant file: " file-full-path)))
+		(ide-data-append-file-path file-full-path)
+		(ide-data-append-file-name file-name)))))
+  t)
 
-;;(ide-try-to-parse-text-solution "~/code/UnrealEngine/engine-files")
+;;(ide-try-to-parse-text-solution "c:/Users/david/AppData/Roaming/UnrealEngine/test")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide find file
