@@ -3,36 +3,73 @@
   :type 'string
   :group 'ide)
 
-;; temp, testing
-(custom-set-variables '(ide-default-current-project "ide.ell"))
-
 (defvar ide-current-project)
-(setq ide-current-project "")
-
 (defvar ide-data)
-(setq ide-data (cons '() '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide state manipulation
+
+(defun ide-data-file-paths (data)
+  (car ide-data))
+
+(defun ide-data-file-names ()
+  (cdr ide-data))
+
+(defun ide-data-append-file-path (path)
+  (setcar ide-data (cons path (car ide-data))))
+
+(defun ide-data-append-file-name (file)
+  (setcdr ide-data (cons file (cdr ide-data))))
+
+(defun ide-data-size ()
+  (length (car ide-data)))
+
+(defun ide-reset-data ()
+  (setq ide-current-project nil)
+  (setq ide-data (cons '() '()))
+  (message "ide-data was reset..."))
+
+(ide-reset-data)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide change project
 
 (defun ide-change-project (solution-file)
   (interactive (list (if (and (not (string= ide-default-current-project ""))
 							  (file-exists-p ide-default-current-project))
 						 ide-current-project
-					   (ido-read-file-name "solution file: "))))
+					   (let ((default-path (if ide-current-project
+											   (file-name-directory ide-current-project)
+											 (file-name-directory (buffer-file-name (current-buffer)))))
+							 (default-project (if ide-current-project
+												  (file-name-nondirectory ide-current-project)
+												"")))
+						 (ido-read-file-name "solution file: " default-path default-project t default-project)))))
+  (if (not (file-exists-p solution-file))
+	  (error "invalid solution file, does not exists..."))
+  
+  (let ((absolute-solution-file (expand-file-name solution-file)))
+	(setq ide-current-project absolute-solution-file)
+	(ide-parse-current-solution)
+	(let ((file-count (ide-data-size)))
+	  (message (concat "Now using project file: " (file-name-nondirectory absolute-solution-file)
+					   " [parsed " (number-to-string file-count) " files]")))))
 
-  (setq ide-current-project solution-file)
-  (ide-parse-current-solution)
-  (message (concat "Now using project file: " (file-name-nondirectory solution-file))))
+;;(ide-change-project "c:/Users/david/AppData/Roaming/UnrealEngine/UE4.sln")
 
-(ide-change-project "c:/Users/david/AppData/Roaming/UnrealEngine/UE4.sln")
+(defun ide-parse-current-solution ()
+  (if (not (boundp 'ide-current-project))
+	  (error "need to setup the current project first..."))
+
+  (setq ide-data (cons '() '()))
+  (cond
+   ((ide-is-vs-solution ide-current-project)				(ide-parse-vs-solution ide-current-project))
+   ((ide-is-xcode-solution ide-current-project)				(ide-parse-xcode-solution ide-current-project))
+   ((ide-try-to-parse-text-solution ide-current-project)	t)
+   (t (error (concat "unsupported solution type for project file: " (file-name-nondirectory ide-current-project))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; internal ide functions
-
-(defun ide-is-vs-solution (file)
-  (string-suffix-p ".sln" file))
-
-(defun is-line-vs-project? (line-str)
-  (or (string-match ".vcproj" line-str)
-	  (string-match ".vcxproj" line-str)))
+;; internal ide utils
 
 (defun ide-get-substrings (str)
   (let ((start nil)
@@ -48,6 +85,16 @@
 
 ;;(ide-get-substrings "test \"hello.vcxproj\" \"test\"")
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; internal ide visual studio functions
+
+(defun ide-is-vs-solution (file)
+  (string-suffix-p ".sln" file))
+
+(defun is-line-vs-project? (line-str)
+  (or (string-match ".vcproj" line-str)
+	  (string-match ".vcxproj" line-str)))
+
 (defun ide-get-line-vs-project (line-str)
   (let ((line-substrings (ide-get-substrings line-str))
 		(project-file nil))
@@ -59,8 +106,6 @@
 	project-file))
 
 ;;(ide-get-line-vs-project "dasfd \"hmmm.vsproj\"test \"hello.vcxproj\" \"test\"")
-
-;;(setq testline "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"UE4\", \"Engine\\Intermediate\\ProjectFiles\\UE4.vcxproj\", \"{C9E3F46F-50B8-4EEF-B6BE-2EA8E7F03F3E}\"")
 
 (defun ide-parse-file-by-line (file line-parser-function)
   (let ((buffer (get-buffer-create (concat "*temp-" file " " (number-to-string (random)) "*"))))
@@ -87,12 +132,10 @@
 		(if (not substrs)
 			(error "invalid ClCompile / ClInclude line..."))
 		(let* ((project-file (car substrs))
-			   (absolute-project-file (if (file-name-absolute-p project-file)
-										  project-file
-										(concat project-file-path project-file))))
-		 (setcar ide-data (cons absolute-project-file (car ide-data)))
-		 (print absolute-project-file))
-		)))
+			   (absolute-project-file (expand-file-name (concat project-file-path project-file)))
+			   (project-file-name (file-name-nondirectory absolute-project-file)))
+		  (ide-data-append-file-path absolute-project-file)
+		  (ide-data-append-file-name project-file-name)))))
 
 (defun ide-parse-vs-project (project-file)
   (if (not (file-exists-p project-file))
@@ -106,6 +149,7 @@
 (defun ide-parse-vs-solution (sln-file)
   (if (not (file-exists-p sln-file))
 	  (error "invalid vs solution file"))
+
   (let ((sln-path (file-name-directory sln-file)))
 	(ide-parse-file-by-line sln-file
 							(lambda (current-line)
@@ -115,17 +159,17 @@
 
 ;;(ide-parse-vs-solution "c:/Users/david/AppData/Roaming/UnrealEngine/UE4.sln")
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; internal ide xcode functions
+
 (defun ide-is-xcode-solution (file)
   nil)
 
 (defun ide-parse-xcode-solution (ide-current-project)
-  (error "xcode solutions are currently unsupported"))
+  (error "xcode solutions are not currently unsupported"))
 
-(defun ide-data-file-map (data)
-  (car data))
-
-(defun ide-data-file-paths (data)
-  (cdr data))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; internal ide text projects functions
 
 (defun ide-try-to-parse-text-solution-internal (file-on-line line-num file-map)
   (let* ((file-symbol (make-symbol (file-name-nondirectory file-on-line)))
@@ -175,17 +219,14 @@
 
 ;;(ide-try-to-parse-text-solution "~/code/UnrealEngine/engine-files")
 
-(defun ide-parse-current-solution ()
-  (if (not (boundp 'ide-current-project))
-	  (error "need to setup the current project first..."))
-  (cond
-   ((ide-is-vs-solution ide-current-project)				(ide-parse-vs-solution ide-current-project))
-   ((ide-is-xcode-solution ide-current-project)				(ide-parse-xcode-solution ide-current-project))
-   ((ide-try-to-parse-text-solution ide-current-project)	t)
-   (t (error (concat "unsupported solution type for project file: " (file-name-nondirectory ide-current-project))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide find file
 
 (defun ide-find-file (&optional file-name-arg)
   (interactive)
+  (if (not ide-current-project)
+	  (error "not project set... use ide-change-project to set it first"))
+  
   (let* ((file-name (if (null file-name-arg) "" file-name-arg))
 		 ;; (files (with-current-buffer (ide-solution-files-buffer)
 		 ;; 		  (split-string (buffer-string) "\n" t)))
@@ -203,7 +244,7 @@
 				   (caddr (car choice-results))
 				 (ido-completing-read "result: " (mapcar 'caddr choice-results) nil t "" nil))))
 	(find-file file)
-	(message (concat "opened file: " file))))
+	(message (concat "opened file: " (file-relative-name file (file-name-directory ide-current-project))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
