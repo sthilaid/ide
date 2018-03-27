@@ -68,16 +68,13 @@
 ;; ide change project
 
 (defun ide-change-project (solution-file)
-  (interactive (list (if (and (not (string= ide-default-current-project ""))
-							  (file-exists-p ide-default-current-project))
-						 ide-current-project
-					   (let ((default-path (if ide-current-project
-											   (file-name-directory ide-current-project)
-											 (file-name-directory (buffer-file-name (current-buffer)))))
-							 (default-project (if ide-current-project
-												  (file-name-nondirectory ide-current-project)
-												"")))
-						 (ido-read-file-name "solution file: " default-path default-project t default-project)))))
+  (interactive (list (let ((default-path (if ide-current-project
+											 (file-name-directory ide-current-project)
+										   (file-name-directory (buffer-file-name (current-buffer)))))
+						   (default-project (if ide-current-project
+												(file-name-nondirectory ide-current-project)
+											  "")))
+					   (ido-read-file-name "solution file: " default-path default-project t default-project))))
   (condition-case ex
 	  (progn
 		(if (not (file-exists-p solution-file))
