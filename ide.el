@@ -235,7 +235,7 @@
 		 ;; (files (with-current-buffer (ide-solution-files-buffer)
 		 ;; 		  (split-string (buffer-string) "\n" t)))
 		 (files (car ide-data))
-		 (options (mapcar (lambda (f) (file-name-nondirectory f)) files))
+		 (options (cdr ide-data))
 		 (choice (ido-completing-read "ide file: " options nil t file-name 'ide-files-history))
 
 		 ;; (choice-idx (cl-position choice options :test (lambda (x y) (string= x y))))
