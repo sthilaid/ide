@@ -1,10 +1,43 @@
+;;; ide.el --- minor mode for working is solution projets  -*- Mode: Emacs-Lisp -*-
+;;
+;; Copyright (C) 2018 David St-Hilaire
+;;
+;; ide mode is free software: you can redistribute it and/or modify it under the
+;; terms of the GNU General Public License as published by the Free Software
+;; Foundation, either version 3 of the License, or (at your option) any later
+;; version.
+;;
+;; To install, place ide.el in your path with
+;;
+;;	(add-to-list 'load-path "<path-to-elisp>/ide")
+;;
+;; then add this line to your .emacs file:
+;;
+;;	(require 'ide)
+;;
+;; The main functions are:
+;;	- ide-change-project: sets your current project
+;;	- ide-find-file: find file in project
+;;	- ide-find-other-file: find the next file related to the current file (.h/.cpp)
+;;
+;; See the keymap below for more interesting functions and their shortcuts.
+;;
+
+;; Can be customized to set a default projecto to load
 (defcustom ide-default-current-project ""
   "The name of your default current project file"
   :type 'string
   :group 'ide)
 
+;; will hold the current project file path (set by ide-change-project)
 (defvar ide-current-project)
+
+;; will hold the internal data used by ide-mode
 (defvar ide-data)
+
+;; can be wet to a function that takes a file as parameter and outputs the next
+;; file when cycling files with alt-o (ide-find-other-file)
+(defvar ide-custom-get-next-file)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
@@ -53,10 +86,14 @@
 		(let ((absolute-solution-file (expand-file-name solution-file)))
 		  (setq ide-current-project absolute-solution-file)
 		  (ide-parse-current-solution)
-		  (let ((file-count (ide-data-size)))
-			(message (concat "Now using project file: " (file-name-nondirectory absolute-solution-file)
-							 " [parsed " (number-to-string file-count) " files]")))))
+		  (let* ((file-count (ide-data-size))
+				 (msg (concat "Now using project file: " (file-name-nondirectory absolute-solution-file)
+							  " [parsed " (number-to-string file-count) " files]")))
+			(message msg)
+			(ide-mode t)
+			msg)))
    ('error (ide-reset-data)
+		   (ide-mode nil)
 		   (message (cadr ex)))))
 
 ;;(ide-change-project "c:/Users/david/AppData/Roaming/UnrealEngine/UE4.sln")
@@ -251,25 +288,107 @@
 	(message (concat "opened file: " (file-relative-name file (file-name-directory ide-current-project))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide open file
+
+(defun ide-get-next-file (file)
+  (if (boundp 'ide-custom-get-next-file)
+	  (funcall ide-custom-get-next-file file)
+
+	;; default implementation
+	(let* ((file-no-dir (file-name-nondirectory file))
+		   (file-ext (file-name-extension file-no-dir))
+		   (next-ext (if (string-match-p "cpp" file-ext)
+						 (replace-regexp-in-string "cpp" "h" file-ext)
+					   (if (string-match-p "h" file-ext)
+						   (replace-regexp-in-string "h" "cpp" file-ext)
+						 file-ext))))
+	  (let ((next-file (concat (file-name-directory file) (file-name-base file-no-dir) "." next-ext)))
+		next-file))))
+
+;; (setq ide-custom-get-next-file (lambda (file) "allo.cpp"))
+;; (makunbound 'ide-custom-get-next-file)
+;; (ide-get-next-file "toto.h")
+;; (ide-get-next-file "c:/temp/toto.cpp")
+
+(defun ide-open-file (original-file file &optional should-create? call-depth)
+  "Create file, if not existing already."
+
+  (let* ((call-depth (if call-depth call-depth 0))
+		 (current-ext (file-name-extension file))
+		 (should-stop-looking-for-files? (and (> call-depth 0)
+											  (string= original-file file))))
+
+	(if should-stop-looking-for-files?
+
+		;; if can't find a file, try to look into opened buffers
+		(let* ((next-buffer-name (file-name-nondirectory (ide-get-next-file original-file)))
+			   (already-opened-buffer (get-buffer next-buffer-name)))
+
+		  (if already-opened-buffer
+			  (switch-to-buffer already-opened-buffer)
+
+			;; if we can't find it in the opened buffer, try to find it!
+			(ide-find-file next-buffer-name)))
+
+	  ;; try to open the desired file
+	  (cond ((file-exists-p file)
+			 (find-file file))
+
+			((and should-create?
+				  (y-or-n-p (concat file " does not exists, created it?")))
+			 (progn
+			   (find-file file)
+			   ;;(insert (ide-get-file-default-text file))
+			   ))
+			(t
+			 (progn
+			   (ide-open-file original-file (ide-get-next-file file) should-create? (+ call-depth 1))))))))
+
+(defun ide-find-other-file ()
+  "Goes in between .cpp <-> .h for files in the current project"
+  (interactive)
+  (let ((file (buffer-file-name (current-buffer))))
+	(ide-open-file file (ide-get-next-file file))))
+
+(defun ide-find-and-create-other-file ()
+  "Goes in between .cpp <-> .h <-> .uc for files in an UE3 project and asks for creating the next file if non-existant"
+  (interactive)
+  (let ((file (buffer-file-name (current-buffer))))
+	(ide-open-file file (ide-get-next-file file) t)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
 
 (defvar ide-mode-map
   (let ((map (make-sparse-keymap)))
-	;;(define-key map (kbd "<f9>") 'ide-kill-compile-run)
+	;; (define-key map (kbd "<M-return>") 'ide-compile)
+	;; (define-key map (kbd "<S-M-return>") 'ide-compile-project)
+	;; (define-key map (kbd "<C-return>") 'ide-gensln)
+
+	;; (define-key map (kbd "<C-M-backspace>") 'ide-rgrep)
+	;; (define-key map (kbd "<C-M-return>") 'ide-rgrep-CurrentProject)
+
+	(define-key map (kbd "C-M-'") 'ide-find-file)
+	(define-key map (kbd "M-o") 'ide-find-other-file)
+	(define-key map (kbd "C-M-o") 'ide-find-and-create-other-file)
+
+	;; (define-key map (kbd "<f5>") 'ide-run-default)
+	;; (define-key map (kbd "S-<f5>") 'ide-kill)
+	;; (define-key map (kbd "<f7>") 'ide-compile-project-default)
+	;; (define-key map (kbd "<f9>") 'ide-kill-compile-run)
+
 	map)
   "ide-mode keymap.")
 
-;; (add-hook 'ide-mode-hook (lambda ()
-;; (if ide-mode
-;; (define-key dired-mode-map (kbd "M-o") 'ide-dired-open-marked-files)
-;; (define-key dired-mode-map (kbd "M-o") nil))))
 
 (define-minor-mode ide-mode
   "ide mode. Provides a convenient way to search for files in large projects defined in different format (.ide or text)."
   :init-value nil
-  :global nil
+  :global t
   :lighter " ide"
-  :keymap 'ide-mode-map
-  )
+  :keymap 'ide-mode-map)
+
+(if (boundp 'ide-default-current-project)
+	(ide-change-project ide-default-current-project))
 
 (provide 'ide)
