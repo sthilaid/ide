@@ -16,7 +16,7 @@
 ;;	(require 'ide)
 ;;
 ;; The main functions are:
-;;	- ide-change-project: sets your current project
+;;	- ide-change-solution: sets your current project
 ;;	- ide-find-file: find file in project
 ;;	- ide-find-other-file: find the next file related to the current file (.h/.cpp)
 ;;
@@ -39,7 +39,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
 
-;; will hold the current project file path (set by ide-change-project)
+;; will hold the current project file path (set by ide-change-solution)
 (defvar ide-current-project)
 
 ;; will hold the internal data used by ide-mode
@@ -54,6 +54,9 @@
 (defun ide-data-projects ()
   (elt ide-data 2))
 
+(defun ide-data-project-paths ()
+  (elt ide-data 3))
+
 (defun ide-data-append-file-path (path)
   (aset ide-data 0 (cons path (ide-data-file-paths))))
 
@@ -63,12 +66,15 @@
 (defun ide-data-append-project-name (project)
   (aset ide-data 2 (cons project (ide-data-projects))))
 
+(defun ide-data-append-project-path (project)
+  (aset ide-data 3 (cons project (ide-data-project-paths))))
+
 (defun ide-data-size ()
   (length (ide-data-file-names)))
 
 (defun ide-reset-data ()
   (setq ide-current-project nil)
-  (setq ide-data (vector '() '() '()))
+  (setq ide-data (vector '() '() '() '()))
   (message "ide-data was reset..."))
 
 (ide-reset-data)
@@ -76,7 +82,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide change project
 
-(defun ide-change-project (solution-file)
+(defun ide-change-solution (solution-file)
   (interactive (list (let ((default-path (if ide-current-project
 											 (file-name-directory ide-current-project)
 										   (file-name-directory (buffer-file-name (current-buffer)))))
@@ -105,7 +111,7 @@
 	 (ide-mode nil)
 	 (message (cadr ex)))))
 
-;;(ide-change-project "e:/UnrealEngine/UE4.sln")
+;;(ide-change-solution "e:/UnrealEngine/UE4.sln")
 
 (defun ide-parse-current-solution ()
   (if (or (not (boundp 'ide-current-project))
@@ -154,6 +160,22 @@
 									line-num)))
 		(kill-buffer buffer)))))
 
+(defun ide-get-project-arg ()
+  (let* ((projects (seq-uniq (ide-data-projects)))
+		 (project-options (cl-loop for p in projects
+								   for i from 1 to (+ (length projects) 1)
+								   collect (list p i)))
+		 (default-project
+		   (let* ((name (buffer-name (current-buffer)))
+				  (buffer-project (cl-loop for f in (ide-data-file-names)
+										   for i from 0 to (ide-data-size)
+										   if (string= f name) return (elt (ide-data-projects) i) end)))
+			 (if (not buffer-project) (car projects) buffer-project))))
+	(let ((project-choice (completing-read (concat "project (default: " default-project "): ")
+										   projects
+										   nil t "" 'ide-project-history)))
+						 (if (string= project-choice "") default-project project-choice))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide visual studio functions
 
@@ -176,7 +198,7 @@
 
 ;;(ide-get-line-vs-project "dasfd \"hmmm.vsproj\"test \"hello.vcxproj\" \"test\"")
 
-(defun ide-accumulate-vs-project-file (project-file-path project-name line-str)
+(defun ide-accumulate-vs-project-file (project-file-dir project-name project-full-path line-str)
   (if (or (string-match "ClInclude" line-str)
 		  (string-match "ClCompile" line-str))
 	  (let ((substrs (ide-get-substrings line-str)))
@@ -185,20 +207,24 @@
 		(let* ((parsed-project-file (car substrs))
 			   (project-file (if (file-name-absolute-p parsed-project-file)
 								 parsed-project-file
-							   (concat project-file-path parsed-project-file)))
+							   (concat project-file-dir parsed-project-file)))
 			   (absolute-project-file (expand-file-name project-file))
 			   (project-file-name (file-name-nondirectory absolute-project-file)))
 		  (ide-data-append-file-path absolute-project-file)
 		  (ide-data-append-file-name project-file-name)
-		  (ide-data-append-project-name project-name)))))
+		  (ide-data-append-project-name project-name)
+		  (ide-data-append-project-path project-full-path)
+		  ))))
 
 (defun ide-parse-vs-project (project-file)
   (if (not (file-exists-p project-file))
 	  (throw 'ide-data "invalid project-file"))
-  (let ((project-file-path (file-name-directory project-file))
-		(project-name (file-name-sans-extension (file-name-nondirectory project-file))))
+  (let ((project-file-dir (file-name-directory project-file))
+		(project-name (file-name-sans-extension (file-name-nondirectory project-file)))
+		(project-full-path (expand-file-name project-file)))
    (ide-parse-file-by-line project-file
-						   (lambda (line-str) (ide-accumulate-vs-project-file project-file-path project-name line-str)))))
+						   (lambda (line-str) (ide-accumulate-vs-project-file
+											   project-file-dir project-name project-full-path line-str)))))
 
 ;;(ide-parse-vs-project "e:/UnrealEngine/Engine/Intermediate/ProjectFiles/UE4.vcxproj")
 ;;(ide-parse-vs-project "e:/UnrealEngine/Engine/Intermediate/ProjectFiles/BlankProgram.vcxproj")
@@ -282,7 +308,7 @@
 (defun ide-find-file (&optional file-name-arg)
   (interactive)
   (if (not ide-current-project)
-	  (throw 'ide-data "not project set... use ide-change-project to set it first"))
+	  (throw 'ide-data "not project set... use ide-change-solution to set it first"))
   
   (let* ((file-name (if (null file-name-arg) "" file-name-arg))
 		 ;; (files (with-current-buffer (ide-solution-files-buffer)
@@ -396,21 +422,7 @@
 (defun ide-grep-project (project searched-str)
     "rgrep expression in specified project files"
 	(interactive
-	 (let ((interactive-project
-			(let* ((projects (seq-uniq (ide-data-projects)))
-				  (project-options (cl-loop for p in projects
-											for i from 1 to (+ (length projects) 1)
-											collect (list p i)))
-				  (default-project
-					(let* ((name (buffer-name (current-buffer)))
-						   (buffer-project (cl-loop for f in (ide-data-file-names)
-													for i from 0 to (ide-data-size)
-													if (string= f name) return (elt (ide-data-projects) i) end)))
-					  (if (not buffer-project) (car projects) buffer-project))))
-			 (let ((project-choice (completing-read (concat "project (default: " default-project "): ")
-													projects
-													nil t "" 'ide-project-history)))
-			   (if (string= project-choice "") default-project project-choice))))
+	 (let ((interactive-project (ide-get-project-arg))
 		   (interactive-searched-str (let* ((word (ide-current-word-or-region))
 											(input (read-string (concat "Search solution for (default: \"" word "\"): ")
 																nil 'ide-grep-history)))
@@ -437,6 +449,54 @@
 ;; (ide-grep-solution "sphere")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide compilation
+
+(defun ide-compile-vs-solution ()
+  (if (not ide-current-project)
+	  (throw 'ide-error "Cannot compile when no solution is active. Please call ide-change-solution"))
+  (compile (concat "\"C:/Program Files (x86)/MSBuild/14.0/Bin/MSBuild.exe\" "
+				   ide-current-project " "
+				   "/t:Build "
+				   "/p:Configuration=Development "
+				   "/p:Platform=\"Win64\" "
+				   "/p:BuildProjectReferences=true")))
+
+(defun ide-compile-xcode-solution ()
+  (throw 'ide-error "compilation for xcode is unsupported for now..."))
+
+(defun ide-compile-solution ()
+  (interactive)
+  (cond
+   ((ide-is-vs-solution ide-current-project)	(ide-compile-vs-solution))
+   ((ide-is-xcode-solution ide-current-project)	(ide-compile-xcode-solution))
+   (t											(throw 'ide-error "can't compile text solutions"))))
+
+;; (defun ide-compile-vs-project (project)
+;;   (let ((project-full-path (cl-loop for path in (ide-data-project-paths)
+;; 									if (string-suffix-p project (file-name-sans-extension path)) return path)))
+;; 	(if (not project-full-path)
+;; 		(throw 'ide-error (concat "coun't not retrieve full project path for project: " project)))
+
+;; 	(let ((env-cmd "\"C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/vcvarsall.bat\""))
+;; 	  (compile (concat env-cmd " && \"C:/Program Files (x86)/MSBuild/14.0/Bin/MSBuild.exe\" "
+;; 					   project-full-path " "
+;; 					   "/t:Build "
+;; 					   "/p:Configuration=Development "
+;; 					   ;;"/p:Platform=\"Win64\" "
+;; 					   "/p:BuildProjectReferences=false")))))
+
+;; (defun ide-compile-xcode-project (project)
+;;   (throw 'ide-error "xcode compilation not supported for now..."))
+
+;; (defun ide-compile-project (project)
+;;   (interactive (list (ide-get-project-arg)))
+;;   (cond
+;;    ((ide-is-vs-solution ide-current-project)	(ide-compile-vs-project project))
+;;    ((ide-is-xcode-solution ide-current-project)	(ide-compile-xcode-project project))
+;;    (t											(throw 'ide-error "can't compile text solutions")))
+;; )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
 
 (defvar ide-mode-map
@@ -455,6 +515,7 @@
 	;; (define-key map (kbd "<f5>") 'ide-run-default)
 	;; (define-key map (kbd "S-<f5>") 'ide-kill)
 	;; (define-key map (kbd "<f7>") 'ide-compile-project-default)
+	(define-key map (kbd "S-<f7>") 'ide-compile-solution)
 	;; (define-key map (kbd "<f9>") 'ide-kill-compile-run)
 
 	map)
@@ -469,6 +530,6 @@
   :keymap 'ide-mode-map)
 
 (if (boundp 'ide-default-current-project)
-	(ide-change-project ide-default-current-project))
+	(ide-change-solution ide-default-current-project))
 
 (provide 'ide)
