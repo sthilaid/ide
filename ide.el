@@ -232,6 +232,16 @@
 
 ;;(ide-add-to-history (make-symbol "undefined-history-symbol") 'hello)
 
+(defun ide-message (&optional msg color)
+  (interactive)
+  (if (or (null msg)
+		  (null color))
+	  (error "fb-message has invalid/null arguments"))
+
+  (message (propertize msg 'face `(:foreground ,color))))
+
+;;(ide-message "hello" "green")
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide visual studio functions
 
@@ -582,6 +592,23 @@
 	(let ((cmd (car (eval 'ide-compile-cmd-history))))
 	  (compile cmd)
 	  (ide-post-compile cmd))))
+
+(defun ide-compilation-finish-handler (buffer string)
+  "handles the *compilation buffer and prints a colored message after compilation"
+  (if (and
+       (buffer-live-p buffer)
+       (string-match "compilation" (buffer-name buffer))
+       (string-match "finished" string))
+    (progn
+      (delete-other-windows)
+	  (if (string= "*compilation*" (buffer-name (current-buffer)))
+		  (switch-to-next-buffer))
+	  (bury-buffer "*compilation*")
+	  (ide-message "compilation successfull" "green"))
+	(progn
+	  (ide-message "compilation failed" "red"))))
+
+(add-hook 'compilation-finish-functions 'ide-compilation-finish-handler)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
