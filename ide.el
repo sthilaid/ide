@@ -533,7 +533,7 @@
 (defun ide-compile-vs-internal (target param-config param-platform build-refs?)
   (let* ((config	(if param-config
 						param-config
-					  (concat "/p:Configuration="(ide-read-with-last-value "config" ide-vs-configurations))))
+					  (concat "/p:Configuration=\""(ide-read-with-last-value "config" ide-vs-configurations) "\"")))
 		 (platform	(if param-platform
 						param-platform
 					  (concat "/p:Platform="(ide-read-with-last-value "platform" ide-vs-platforms))))
