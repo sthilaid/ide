@@ -208,7 +208,7 @@
 	(let ((project-choice (completing-read (concat "project (default: " default-project "): ")
 										   projects nil t "" 'ide-project-history)))
 						 (if (string= project-choice "") default-project project-choice))))
-(ide-get-project-arg nil)
+;;(ide-get-project-arg nil)
 
 (defun ide-read-with-last-value (id &optional options)
   (let* ((history-sym	(intern (concat "ide-compile-project-" id "-history")))
@@ -377,12 +377,12 @@
 		 ;; (choice-idx (cl-position choice options :test (lambda (x y) (string= x y))))
 		 ;; (file (nth choice-idx files))
 
-		 (choice-results (loop for option being the element of options using (index i)
-							   for file being the element of files
-							   if (string= choice option) collect (list i option file)))
+		 (choice-results (cl-loop for option being the element of options using (index i)
+                                  for file being the element of files
+                                  if (string= choice option) collect (list i option file)))
 		 (file (if (= (length choice-results) 1)
-				   (caddr (car choice-results))
-				 (ido-completing-read "result: " (mapcar 'caddr choice-results) nil t "" nil))))
+				   (cl-caddr (car choice-results))
+				 (ido-completing-read "result: " (mapcar 'cl-caddr choice-results) nil t "" nil))))
 	(find-file file)
 	(message (concat "opened file: " (file-relative-name file (file-name-directory ide-current-project))))))
 
@@ -588,10 +588,6 @@
 
 (defvar ide-mode-map
   (let ((map (make-sparse-keymap)))
-	;; (define-key map (kbd "<M-return>") 'ide-compile)
-	;; (define-key map (kbd "<S-M-return>") 'ide-compile-project)
-	;; (define-key map (kbd "<C-return>") 'ide-gensln)
-
 	(define-key map (kbd "<C-M-backspace>") 'ide-grep-solution)
 	(define-key map (kbd "<C-M-return>") 'ide-grep-project)
 
@@ -599,16 +595,12 @@
 	(define-key map (kbd "M-o") 'ide-find-other-file)
 	(define-key map (kbd "C-M-o") 'ide-find-and-create-other-file)
 
-	;; (define-key map (kbd "<f5>") 'ide-run-default)
-	;; (define-key map (kbd "S-<f5>") 'ide-kill)
-	(define-key map (kbd "<f7>") 'ide-quick-compile)
-	(define-key map (kbd "M-<f7>") 'ide-compile-solution)
-	(define-key map (kbd "C-<f7>") 'ide-compile-project)
-	;; (define-key map (kbd "<f9>") 'ide-kill-compile-run)
+	(define-key map (kbd "<f7>")	'ide-quick-compile)
+	(define-key map (kbd "M-<f7>")	'ide-compile-solution)
+	(define-key map (kbd "C-<f7>")	'ide-compile-project)
 
 	map)
   "ide-mode keymap.")
-
 
 (define-minor-mode ide-mode
   "ide mode. Provides a convenient way to search for files in large projects defined in different format (.ide or text). Also support compiling projects, to a certain extent."
