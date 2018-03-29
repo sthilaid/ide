@@ -17,11 +17,17 @@
 ;;
 ;; The main functions are:
 ;;	- ide-change-solution: sets your current project
+;;  - ide-solution: show the current solution
+;;  - ide-reset-data: resets all the ide-mode data and exits ide-mode
 ;;	- ide-find-file: find file in project
 ;;	- ide-find-other-file: find the next file related to the current file (.h/.cpp)
+;;  - ide-grep-project: grep within all files referenced in the specified project
+;;  - ide-grep-solution: grep within all files referenced in the entire solution
+;;  - ide-compile-project: compile the specified solution project
+;;  - ide-compile-solution: compile the entire solution
+;;  - ide-quick-compile: re-run the last compilation command
 ;;
 ;; See the keymap below for more interesting functions and their shortcuts.
-;;
 
 ;; Can be customized to set a default projecto to load
 (defcustom ide-default-current-project ""
@@ -233,7 +239,6 @@
 ;;(ide-add-to-history (make-symbol "undefined-history-symbol") 'hello)
 
 (defun ide-message (&optional msg color)
-  (interactive)
   (if (or (null msg)
 		  (null color))
 	  (error "fb-message has invalid/null arguments"))
@@ -467,7 +472,7 @@
 	(ide-open-file file (ide-get-next-file file) t)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ide-grep-sln
+;; ide-grep
 
 (defun ide-current-word-or-region ()
   (if (use-region-p)
