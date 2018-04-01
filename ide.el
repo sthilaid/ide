@@ -26,6 +26,7 @@
 ;;  - ide-compile-project: compile the specified solution project
 ;;  - ide-compile-solution: compile the entire solution
 ;;  - ide-quick-compile: re-run the last compilation command
+;;	- ide-create-tags: Create tags file from all files in the current solution.
 ;;
 ;; See the keymap below for more interesting functions and their shortcuts.
 
@@ -57,12 +58,23 @@
   :type 'sexp
   :group 'ide)
 
+(defcustom ide-tags-generator "etags"
+  "Defines the list of platforms available in the visual studio solution."
+  :type 'string
+  :group 'ide)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
 
 ;; will hold the current project file path (set by ide-change-solution)
 (defvar ide-current-project)
 (setq ide-current-project "")
+
+(defvar ide-last-create-tags-process)
+(setq ide-last-create-tags-process nil)
+
+(defvar ide-last-create-tags-process-stat-time)
+(setq ide-last-create-tags-process-stat-time (current-time))
 
 ;; will hold the internal data used by ide-mode
 (defvar ide-data)
@@ -151,6 +163,7 @@
 ;;(ide-change-solution "~/code/UnrealEngine/UE4.xcworkspace/contents.xcworkspacedata")
 
 (defun ide-parse-current-solution ()
+  "Will try to parse the current solution file, and extract all the referenced files in it."
   (if (or (not (boundp 'ide-current-project))
 		  (not ide-current-project))
 	  (throw 'ide-error "need to setup the current project first..."))
@@ -175,6 +188,8 @@
 ;; (ide-get-proper-solution-file "~/code/UnrealEngine/UE4.xcworkspace/contents.xcworkspacedata")
 
 (defun ide-get-substrings (str)
+  "Helper that will return a list of all the internal strings of the provided string. 
+Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((start nil)
 		(substrings '()))
 	(cl-loop for current-char across str
@@ -189,6 +204,7 @@
 ;;(ide-get-substrings "test \"hello.vcxproj\" \"test\"")
 
 (defun ide-parse-file-by-line (file line-parser-function)
+  "Helper that will apply line-parser-function to each line of the provided file."
   (let ((buffer (get-buffer-create (concat "*temp-" file " " (number-to-string (random)) "*"))))
 	(with-current-buffer buffer
 	  (unwind-protect
@@ -206,6 +222,7 @@
 		(kill-buffer buffer)))))
 
 (defun ide-get-project-arg (use-buffer-context-as-default?)
+  "Helper that will select one of the available projects in the current solution."
   (let* ((projects (seq-uniq (ide-data-projects)))
 		 (project-options (cl-loop for p in projects
 								   for i from 1 to (+ (length projects) 1)
@@ -229,6 +246,7 @@
 ;;(ide-get-project-arg nil)
 
 (defun ide-read-with-last-value (id &optional options)
+  "Helper that will read an input using the last value in it's history as default. If options is non-nil, will use it as a choice."
   (let* ((history-sym	(intern (concat "ide-compile-project-" id "-history")))
 		 (history		(if (boundp history-sym) (eval history-sym) '()))
 		 (last-value	(if (consp history) (car history) (if options (car options) "")))
@@ -251,6 +269,7 @@
 ;;(ide-add-to-history (make-symbol "undefined-history-symbol") 'hello)
 
 (defun ide-message (&optional msg color)
+  "prints a colored message in the mini-buffer"
   (if (or (null msg)
 		  (null color))
 	  (error "ide-message has invalid/null arguments"))
@@ -260,6 +279,7 @@
 ;;(ide-message "hello" "green")
 
 (defun ide-get-line-project (line-str project-extentions)
+  "Will return the project contained in line-str that has one of the provided extentions"
   (let ((line-substrings (ide-get-substrings line-str)))
 	(cl-loop for line-substr in line-substrings
 			 if (seq-some (lambda (ext) (string-suffix-p ext line-substr)) project-extentions)
@@ -295,6 +315,7 @@
 		  (ide-data-append-project-path project-full-path)))))
 
 (defun ide-parse-vs-project (project-file)
+  "Will parse provided visual studio .sln file and accumulate all the source file referenced by that solution."
   (if (not (file-exists-p project-file))
 	  (throw 'ide-error "invalid project-file"))
   
@@ -337,6 +358,7 @@
 ;;60B3E4D93D861A6F537745E8 /* Pawn.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.c.h; name = "Pawn.h"; path = "../../Source/Runtime/Engine/Classes/GameFramework/Pawn.h"; sourceTree = SOURCE_ROOT; };
 
 (defun ide-accumulate-xcode-project-file (project-file-dir project-name project-full-path line-str)
+  "Will accumulate all the source files in the project file."
   (if (and (string-match "isa = PBXFileReference" line-str)
 		   (or (string-match "explicitFileType = sourcecode" line-str)
 			   (string-match "explicitFileType = file.text" line-str))
@@ -359,6 +381,7 @@
 		  (ide-data-append-project-path project-full-path)))))
 
 (defun ide-parse-xcode-project (project-file)
+  "Will parse the provided project file and add all it's content in the ide mode data."
   (let ((project-file-dir (file-name-directory project-file))
 		(project-name (file-name-sans-extension (file-name-nondirectory project-file)))
 		(project-full-path (expand-file-name project-file))
@@ -374,6 +397,7 @@
 ;;(ide-remove-xcode-group "group:Engine/Intermediate/ProjectFiles/UE4.xcodeproj")
 
 (defun ide-parse-xcode-solution (ide-current-project)
+  "Tries to parse an xcode solution. Expects the .xcworkspace directory."
   (let ((sln-path (file-name-directory ide-current-project))
 		(sln-contents-file (concat ide-current-project "/contents.xcworkspacedata")))
 	(ide-parse-file-by-line sln-contents-file
@@ -416,6 +440,7 @@
   (vector is-valid? file-map file-paths))
 
 (defun ide-try-to-parse-text-solution (sln-file)
+  "Tries to parse a text solution file. Should be a file with one file per line, as if gotten from 'grep . -name \"*.cpp\" | file."
   (if (file-exists-p sln-file)
 	  (let ((sln-path (file-name-directory sln-file)))
 		(ide-parse-file-by-line sln-file
@@ -466,6 +491,7 @@
 ;; ide open file
 
 (defun ide-get-next-file (file)
+  "Returns the next file name, coming after file. Used to cycle through similar files (Eg: .h/.cpp)"
   (if (and (boundp 'ide-custom-get-next-file)
 		   ide-custom-get-next-file)
 	  (funcall ide-custom-get-next-file file)
@@ -536,11 +562,14 @@
 ;; ide-grep
 
 (defun ide-current-word-or-region ()
+  "returns string aroudn the point, if no region is being defined, else will return the region content."
   (if (use-region-p)
 	  (buffer-substring (region-beginning) (region-end))
 	(current-word)))
 
 (defun ide-grep (searched-str files)
+  "Generic function that greps searched-str in the provided files"
+  
   (message "generating files cache...")
   (let ((files-cache-buffer (get-buffer-create (concat "*temp-" (number-to-string (random)) "*"))))
 	(unwind-protect
@@ -586,6 +615,7 @@
 ;; ide compilation
 
 (defun ide-post-compile (cmd)
+  "Cleanup function called after a visual studio compilation"
   (let ((need-to-manipulate-windows? (> (length (window-list)) 1))
 		(is-in-compilation-buffer? (string= (buffer-name (current-buffer)) "*compilation*")))
 	(when (and need-to-manipulate-windows?
@@ -597,6 +627,7 @@
   (message cmd))
 
 (defun ide-compile-vs-internal (target param-config param-platform build-refs?)
+  "Internal function used to compile visual studio solution."
   (let* ((config	(if param-config
 						param-config
 					  (concat "/p:Configuration=\""(ide-read-with-last-value "config" ide-vs-configurations) "\"")))
@@ -675,6 +706,54 @@
 	  (ide-message "compilation failed" "red"))))
 
 (add-hook 'compilation-finish-functions 'ide-compilation-finish-handler)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide mode tags generation
+
+(defun ide-get-tags-file ()
+  "Returns the tags file for this solution."
+  (if (not ide-current-project)
+	  (throw 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+  
+  (concat (file-name-directory ide-current-project) "TAGS"))
+
+(defun ide-create-tags ()
+  "Create tags file from all files in the current solution."
+  (interactive)
+  (if (not ide-current-project)
+	  (throw 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+
+  (let ((should-skip? (and ide-last-create-tags-process
+						   (process-live-p ide-last-create-tags-process)
+						   (not (y-or-n-p "ide-create-tags process already running, restart it?")))))
+	(if should-skip?
+		(message "Skipped restarting TAGS generation.")
+	  (let* ((tags-file (ide-get-tags-file))
+			 (temp-file-name (make-temp-file "ide-mode-temp-file-cache"))
+			 (files-cache-buffer (get-buffer-create temp-file-name)))
+		(if (file-exists-p tags-file)
+			(delete-file tags-file))
+		(unwind-protect
+			(with-current-buffer files-cache-buffer
+			  (let* ((files (ide-data-file-paths)))
+				(cl-loop for f in files do (insert (concat f " ")))
+				(write-file temp-file-name nil)
+				(message (concat "generating " tags-file "..."))
+				(setq ide-last-create-tags-process
+					  (start-process-shell-command "ide-create-tags"
+												   (make-temp-name "ide-create-tags")
+												   (concat "cat " temp-file-name " | xargs -n 50 " ide-tags-generator " -f " tags-file " -a ")))
+				(set-process-sentinel ide-last-create-tags-process 'ide-create-tags-process-sentinel)
+				(setq ide-last-create-tags-process-stat-time (current-time))))
+		  (kill-buffer files-cache-buffer))))))
+
+(defun ide-create-tags-process-sentinel (process event)
+  "Sentinel called when a ide-create-tags process changes status."
+  (let* ((duration		(time-subtract ide-last-create-tags-process-stat-time (current-time)))
+		 (duration-str	(format-time-string "%M minutes %S secs" duration)))
+	(cond ((string= event "finished\n") (progn (visit-tags-table (ide-get-tags-file))
+											   (ide-message (concat "'ide-create-tags' completed in " duration-str ".") "green")))
+		  (t (ide-message (concat "'ide-create-tags' failed after " duration-str " with event: " event) "red")))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
