@@ -62,6 +62,7 @@
 
 ;; will hold the current project file path (set by ide-change-solution)
 (defvar ide-current-project)
+(setq ide-current-project "")
 
 ;; will hold the internal data used by ide-mode
 (defvar ide-data)
@@ -116,19 +117,20 @@
 
 (defun ide-change-solution (solution-file)
   "Will set the solution file as the current solution for this mode."
-  (interactive (list (let ((default-path (if ide-current-project
-											 (file-name-directory ide-current-project)
-										   (file-name-directory (buffer-file-name (current-buffer)))))
-						   (default-project (if ide-current-project
-												(file-name-nondirectory ide-current-project)
-											  "")))
+  (interactive (list (let* ((default-project (if (and (boundp 'ide-current-project)
+													  (not (string= ide-current-project "")))
+												 (file-name-nondirectory ide-current-project)
+											   ""))
+							(default-path (if (not (string= default-project ""))
+											  (file-name-directory ide-current-project)
+											(file-name-directory (buffer-file-name (current-buffer))))))
 					   (ido-read-file-name "solution file: " default-path default-project t default-project))))
   (condition-case ex
 	  (progn
 		(if (not (file-exists-p solution-file))
 			(throw 'ide-error "invalid solution file, does not exists..."))
 
-		(let ((absolute-solution-file (expand-file-name solution-file)))
+		(let ((absolute-solution-file (expand-file-name (ide-get-proper-solution-file solution-file))))
 		  (ide-reset-data)
 		  (setq ide-current-project absolute-solution-file)
 		  (ide-parse-current-solution)
@@ -142,9 +144,11 @@
 	(ide-error
 	 (ide-reset-data)
 	 (ide-mode -1)
-	 (message (cadr ex)))))
+	 (message (cadr ex)))
+	))
 
 ;;(ide-change-solution "e:/UnrealEngine/UE4.sln")
+;;(ide-change-solution "~/code/UnrealEngine/UE4.xcworkspace/contents.xcworkspacedata")
 
 (defun ide-parse-current-solution ()
   (if (or (not (boundp 'ide-current-project))
@@ -161,6 +165,14 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide utils
+
+(defun ide-get-proper-solution-file (file)
+  "Returns the path of the solution to be used for the given solution file."
+  (cond
+   ((ide-is-xcode-solution file)	(directory-file-name (file-name-directory file))) ;; content file contain within the main xcworkspacedata folder
+   (t file)))
+
+;; (ide-get-proper-solution-file "~/code/UnrealEngine/UE4.xcworkspace/contents.xcworkspacedata")
 
 (defun ide-get-substrings (str)
   (let ((start nil)
@@ -241,11 +253,19 @@
 (defun ide-message (&optional msg color)
   (if (or (null msg)
 		  (null color))
-	  (error "fb-message has invalid/null arguments"))
+	  (error "ide-message has invalid/null arguments"))
 
   (message (propertize msg 'face `(:foreground ,color))))
 
 ;;(ide-message "hello" "green")
+
+(defun ide-get-line-project (line-str project-extentions)
+  (let ((line-substrings (ide-get-substrings line-str)))
+	(cl-loop for line-substr in line-substrings
+			 if (seq-some (lambda (ext) (string-suffix-p ext line-substr)) project-extentions)
+			 return line-substr)))
+
+;;(ide-get-line-project "as;dfkljasflkjsf asdf \"adsfdsf\" lkjlkjlkj \"toto.vcxproj\" dsafsdf \"blub\"..." '("abc" "vcxproj"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide visual studio functions
@@ -256,18 +276,6 @@
 (defun is-line-vs-project? (line-str)
   (or (string-match ".vcproj" line-str)
 	  (string-match ".vcxproj" line-str)))
-
-(defun ide-get-line-vs-project (line-str)
-  (let ((line-substrings (ide-get-substrings line-str))
-		(project-file nil))
-	(cl-loop until project-file
-			 for line-substr in line-substrings
-			 if (or (string-suffix-p ".vcproj" line-substr)
-					(string-suffix-p ".vcxproj" line-substr))
-			 do (setq project-file line-substr))
-	project-file))
-
-;;(ide-get-line-vs-project "dasfd \"hmmm.vsproj\"test \"hello.vcxproj\" \"test\"")
 
 (defun ide-accumulate-vs-project-file (project-file-dir project-name project-full-path line-str)
   (if (or (string-match "ClInclude" line-str)
@@ -307,7 +315,7 @@
   (let ((sln-path (file-name-directory sln-file)))
 	(ide-parse-file-by-line sln-file
 							(lambda (current-line)
-							  (let ((relative-project (ide-get-line-vs-project current-line)))
+							  (let ((relative-project (ide-get-line-project current-line '(".vcxproj" ".vcproj"))))
 								(if relative-project
 									(ide-parse-vs-project (concat sln-path relative-project))))))))
 
@@ -317,22 +325,74 @@
 ;; internal ide xcode functions
 
 (defun ide-is-xcode-solution (file)
-  nil)
+  (or (and (string-suffix-p ".xcworkspacedata" file)
+		   (file-exists-p file))
+	  (and (string-suffix-p ".xcworkspace" file)
+		   (file-directory-p file))))
+
+;; (ide-is-xcode-solution "~/code/UnrealEngine/UE4.xcworkspace")
+;; (ide-is-xcode-solution "~/code/UnrealEngine/UE4.xcworkspace/contents.xcworkspacedata")
+
+;; example line from xcode project file
+;;60B3E4D93D861A6F537745E8 /* Pawn.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.c.h; name = "Pawn.h"; path = "../../Source/Runtime/Engine/Classes/GameFramework/Pawn.h"; sourceTree = SOURCE_ROOT; };
+
+(defun ide-accumulate-xcode-project-file (project-file-dir project-name project-full-path line-str)
+  (if (and (string-match "isa = PBXFileReference" line-str)
+		   (or (string-match "explicitFileType = sourcecode" line-str)
+			   (string-match "explicitFileType = file.text" line-str))
+		   (string-match "path = " line-str))
+	  (let ((substrs (ide-get-substrings line-str)))
+		(if (not substrs)
+			(throw 'ide-error (concat "unexpected syntax il .xcodeproj file on line: " line-str)))
+		(let* ((parsed-project-file (let ((file-str (cl-loop for str in substrs if (file-exists-p (concat project-file-dir str)) return str)))
+									  (if (not file-str)
+										  (throw 'ide-error (concat "could not parse valid file path on line: " line-str))
+										file-str)))
+			   (project-file (if (file-name-absolute-p parsed-project-file)
+								 parsed-project-file
+							   (concat project-file-dir parsed-project-file)))
+			   (absolute-project-file (expand-file-name project-file))
+			   (project-file-name (file-name-nondirectory absolute-project-file)))
+		  (ide-data-append-file-path absolute-project-file)
+		  (ide-data-append-file-name project-file-name)
+		  (ide-data-append-project-name project-name)
+		  (ide-data-append-project-path project-full-path)))))
+
+(defun ide-parse-xcode-project (project-file)
+  (let ((project-file-dir (file-name-directory project-file))
+		(project-name (file-name-sans-extension (file-name-nondirectory project-file)))
+		(project-full-path (expand-file-name project-file))
+		(project-content-file (concat project-file "/project.pbxproj")))
+   (ide-parse-file-by-line project-content-file
+						   (lambda (line-str) (ide-accumulate-xcode-project-file
+											   project-file-dir project-name project-full-path line-str)))))
+
+(defun ide-remove-xcode-group (project-line)
+  (if project-line
+	  (replace-regexp-in-string "group:" "" project-line)))
+
+;;(ide-remove-xcode-group "group:Engine/Intermediate/ProjectFiles/UE4.xcodeproj")
 
 (defun ide-parse-xcode-solution (ide-current-project)
-  (throw 'ide-error "xcode solutions are not currently unsupported"))
+  (let ((sln-path (file-name-directory ide-current-project))
+		(sln-contents-file (concat ide-current-project "/contents.xcworkspacedata")))
+	(ide-parse-file-by-line sln-contents-file
+							(lambda (current-line)
+							  (let ((relative-project (ide-remove-xcode-group (ide-get-line-project current-line '(".xcodeproj")))))
+								(if relative-project
+									(ide-parse-xcode-project (concat sln-path relative-project))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide text projects functions
 
 (defun ide-try-to-parse-text-solution-internal (file-on-line line-num file-map)
   (let* ((file-symbol (make-symbol (file-name-nondirectory file-on-line)))
-		   (file-map-cell (assoc file-symbol file-map)))
-	  (if file-map-cell
-		  (progn
-			(setcdr file-map-cell (vconcat (vector line-num) (cdr file-map-cell)))
-			file-map)
-		(cons (cons file-symbol (vector line-num)) file-map))))
+		 (file-map-cell (assoc file-symbol file-map)))
+	(if file-map-cell
+		(progn
+		  (setcdr file-map-cell (vconcat (vector line-num) (cdr file-map-cell)))
+		  file-map)
+	  (cons (cons file-symbol (vector line-num)) file-map))))
 
 (defun ide-try-to-parse-text-solution-loop (is-valid? file-map file-paths line-num)
   (cl-loop until (not is-valid?)
@@ -356,20 +416,21 @@
   (vector is-valid? file-map file-paths))
 
 (defun ide-try-to-parse-text-solution (sln-file)
-  (let ((sln-path (file-name-directory sln-file)))
-   (ide-parse-file-by-line
-	sln-file
-	(lambda (line-str)
-	  (let* ((file (if (file-name-absolute-p line-str)
-					   line-str
-					 (concat sln-path line-str)))
-			 (file-full-path (expand-file-name file))
-			 (file-name (file-name-nondirectory file)))
-		(if (not (file-exists-p file-full-path))
-			(throw 'ide-error (concat "invalid text solution, unexistant file: " file-full-path)))
-		(ide-data-append-file-path file-full-path)
-		(ide-data-append-file-name file-name)))))
-  t)
+  (if (file-exists-p sln-file)
+	  (let ((sln-path (file-name-directory sln-file)))
+		(ide-parse-file-by-line sln-file
+								(lambda (line-str)
+								  (let* ((file (if (file-name-absolute-p line-str)
+												   line-str
+												 (concat sln-path line-str)))
+										 (file-full-path (expand-file-name file))
+										 (file-name (file-name-nondirectory file)))
+									(if (not (file-exists-p file-full-path))
+										(throw 'ide-error (concat "invalid text solution, unexistant file: " file-full-path)))
+									(ide-data-append-file-path file-full-path)
+									(ide-data-append-file-name file-name))))
+		t)
+	nil))
 
 ;;(ide-try-to-parse-text-solution "c:/Users/david/AppData/Roaming/UnrealEngine/test")
 
@@ -484,10 +545,10 @@
   (let ((files-cache-buffer (get-buffer-create (concat "*temp-" (number-to-string (random)) "*"))))
 	(unwind-protect
 		(with-current-buffer files-cache-buffer
-		  (let ((temp-file-name "c:/temp/temp-files-cache"))   ;; ewww, need to make this portable...
+		  (let ((temp-file-name (make-temp-file "ide-mode-temp-file-cache")))
 			(cl-loop for f in files do (insert (concat f " ")))
 			(write-file temp-file-name nil)
-			(grep-find (concat "cat " temp-file-name " | xargs grep --color=always -i -nH -e \"" searched-str "\" "))))
+			(grep-find (concat "cat " temp-file-name " | xargs -n 50 grep --color=always -i -nH -e \"" searched-str "\" "))))
 	  (kill-buffer files-cache-buffer)))
   (select-window (next-window))
   (delete-other-windows))
@@ -641,7 +702,8 @@
   :lighter " ide"
   :keymap 'ide-mode-map)
 
-(if (boundp 'ide-default-current-project)
+(if (and (boundp 'ide-default-current-project)
+		 (not (string= ide-default-current-project "")))
 	(ide-change-solution ide-default-current-project))
 
 (provide 'ide)
