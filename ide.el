@@ -30,9 +30,9 @@
 ;;
 ;; See the keymap below for more interesting functions and their shortcuts.
 
-;; Can be customized to set a default projecto to load
-(defcustom ide-default-current-project ""
-  "The name of your default current project file"
+;; Can be customized to set a default solution to load
+(defcustom ide-default-current-solution ""
+  "The name of your default current solution file"
   :type 'string
   :group 'ide)
 
@@ -66,9 +66,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
 
-;; will hold the current project file path (set by ide-change-solution)
-(defvar ide-current-project)
-(setq ide-current-project "")
+;; will hold the current solution file path (set by ide-change-solution)
+(defvar ide-current-solution)
+(setq ide-current-solution "")
 
 (defvar ide-last-create-tags-process)
 (setq ide-last-create-tags-process nil)
@@ -83,9 +83,16 @@
   "Shows what is the current solution file."
   (interactive)
   (message
-   (if ide-current-project
-	   ide-current-project
+   (if (file-exists-p ide-current-solution)
+	   ide-current-solution
 	 "No solutions are active, set one with 'ide-change-solution'")))
+
+(defun ide-current-solution-valid? ()
+  (and (boundp 'ide-current-solution)
+	   (let ((current-solution (eval 'ide-current-solution)))
+		 (and (stringp current-solution)
+			  (not (string= current-solution ""))
+			  (file-exists-p current-solution)))))
 
 (defun ide-data-file-paths ()
   (elt ide-data 0))
@@ -117,64 +124,66 @@
 (defun ide-reset-data ()
   "Resets all data used by ide-mode"
   (interactive)
-  (setq ide-current-project nil)
+  (setq ide-current-solution "")
   (setq ide-data (vector '() '() '() '()))
   (if (and (boundp 'ide-mode)
 		   (eval 'ide-mode))
 	  (ide-mode -1))
   (message "ide-data was reset..."))
 
+(define-error 'ide-error "unhandled IDE error occured...")
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ide change project
+;; ide change solution
 
 (defun ide-change-solution (solution-file)
   "Will set the solution file as the current solution for this mode."
-  (interactive (list (let* ((default-project (if (and (boundp 'ide-current-project)
-													  (not (string= ide-current-project "")))
-												 (file-name-nondirectory ide-current-project)
-											   ""))
-							(default-path (if (not (string= default-project ""))
-											  (file-name-directory ide-current-project)
-											(file-name-directory (buffer-file-name (current-buffer))))))
-					   (ido-read-file-name "solution file: " default-path default-project t default-project))))
+  (interactive (list	(if (ide-current-solution-valid?)
+  							(let* ((current-solution	(eval 'ide-current-solution))
+  								   (default-sln-name	(file-name-nondirectory current-solution))
+  								   (default-sln-path)	(file-name-directory current-solution))
+  							  (ido-read-file-name "solution file: " default-sln-path default-sln-name t default-sln-name))
+  						  (let* ((buffer-file (buffer-file-name (current-buffer)))
+								 (default-sln-path (if buffer-file
+													   (file-name-directory buffer-file)
+													 "")))
+							(ido-read-file-name	"solution file: " default-sln-path "" t "")))))
   (condition-case ex
 	  (progn
 		(if (not (file-exists-p solution-file))
-			(throw 'ide-error "invalid solution file, does not exists..."))
+			(signal 'ide-error "invalid solution file, does not exists..."))
 
 		(let ((absolute-solution-file (expand-file-name (ide-get-proper-solution-file solution-file))))
 		  (ide-reset-data)
-		  (setq ide-current-project absolute-solution-file)
+		  (setq ide-current-solution absolute-solution-file)
 		  (ide-parse-current-solution)
 		  (let* ((file-count (ide-data-size))
-				 (msg (concat "Now using project file: " (file-name-nondirectory absolute-solution-file)
+				 (msg (concat "Now using solution file: " (file-name-nondirectory absolute-solution-file)
 							  " [parsed " (number-to-string file-count) " files]")))
 			(message msg)
 			(ide-mode t)
 			msg)))
-	
 	(ide-error
 	 (ide-reset-data)
 	 (ide-mode -1)
-	 (message (cadr ex)))
-	))
+	 (ide-message (concat "ide-error: " (cdr ex)) "red"))))
 
+;;(ide-change-solution "e:/UnrealEngine/toto")
 ;;(ide-change-solution "e:/UnrealEngine/UE4.sln")
 ;;(ide-change-solution "~/code/UnrealEngine/UE4.xcworkspace/contents.xcworkspacedata")
 
 (defun ide-parse-current-solution ()
   "Will try to parse the current solution file, and extract all the referenced files in it."
-  (if (or (not (boundp 'ide-current-project))
-		  (not ide-current-project))
-	  (throw 'ide-error "need to setup the current project first..."))
+  (if (not (ide-current-solution-valid?))
+	  (signal 'ide-error "need to setup the current project first..."))
 
   (message "Parsing solution file...")
   (cond
-   ((ide-is-vs-solution ide-current-project)				(ide-parse-vs-solution ide-current-project))
-   ((ide-is-xcode-solution ide-current-project)				(ide-parse-xcode-solution ide-current-project))
-   ((ide-try-to-parse-text-solution ide-current-project)	t)
-   (t (throw 'ide-error (concat "unsupported solution type for project file: "
-								(file-name-nondirectory ide-current-project))))))
+   ((ide-is-vs-solution ide-current-solution)				(ide-parse-vs-solution ide-current-solution))
+   ((ide-is-xcode-solution ide-current-solution)				(ide-parse-xcode-solution ide-current-solution))
+   ((ide-try-to-parse-text-solution ide-current-solution)	t)
+   (t (signal 'ide-error (concat "unsupported solution type for project file: "
+								(file-name-nondirectory ide-current-solution))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide utils
@@ -302,7 +311,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		  (string-match "ClCompile" line-str))
 	  (let ((substrs (ide-get-substrings line-str)))
 		(if (not substrs)
-			(throw 'ide-error "invalid ClCompile / ClInclude line..."))
+			(signal 'ide-error "invalid ClCompile / ClInclude line..."))
 		(let* ((parsed-project-file (car substrs))
 			   (project-file (if (file-name-absolute-p parsed-project-file)
 								 parsed-project-file
@@ -317,7 +326,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 (defun ide-parse-vs-project (project-file)
   "Will parse provided visual studio .sln file and accumulate all the source file referenced by that solution."
   (if (not (file-exists-p project-file))
-	  (throw 'ide-error "invalid project-file"))
+	  (signal 'ide-error "invalid project-file"))
   
   (let ((project-file-dir (file-name-directory project-file))
 		(project-name (file-name-sans-extension (file-name-nondirectory project-file)))
@@ -331,7 +340,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 (defun ide-parse-vs-solution (sln-file)
   (if (not (file-exists-p sln-file))
-	  (throw 'ide-error "invalid vs solution file"))
+	  (signal 'ide-error "invalid vs solution file"))
 
   (let ((sln-path (file-name-directory sln-file)))
 	(ide-parse-file-by-line sln-file
@@ -365,10 +374,10 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		   (string-match "path = " line-str))
 	  (let ((substrs (ide-get-substrings line-str)))
 		(if (not substrs)
-			(throw 'ide-error (concat "unexpected syntax il .xcodeproj file on line: " line-str)))
+			(signal 'ide-error (concat "unexpected syntax il .xcodeproj file on line: " line-str)))
 		(let* ((parsed-project-file (let ((file-str (cl-loop for str in substrs if (file-exists-p (concat project-file-dir str)) return str)))
 									  (if (not file-str)
-										  (throw 'ide-error (concat "could not parse valid file path on line: " line-str))
+										  (signal 'ide-error (concat "could not parse valid file path on line: " line-str))
 										file-str)))
 			   (project-file (if (file-name-absolute-p parsed-project-file)
 								 parsed-project-file
@@ -396,10 +405,10 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 ;;(ide-remove-xcode-group "group:Engine/Intermediate/ProjectFiles/UE4.xcodeproj")
 
-(defun ide-parse-xcode-solution (ide-current-project)
+(defun ide-parse-xcode-solution (current-solution)
   "Tries to parse an xcode solution. Expects the .xcworkspace directory."
-  (let ((sln-path (file-name-directory ide-current-project))
-		(sln-contents-file (concat ide-current-project "/contents.xcworkspacedata")))
+  (let ((sln-path (file-name-directory current-solution))
+		(sln-contents-file (concat current-solution "/contents.xcworkspacedata")))
 	(ide-parse-file-by-line sln-contents-file
 							(lambda (current-line)
 							  (let ((relative-project (ide-remove-xcode-group (ide-get-line-project current-line '(".xcodeproj")))))
@@ -451,7 +460,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 										 (file-full-path (expand-file-name file))
 										 (file-name (file-name-nondirectory file)))
 									(if (not (file-exists-p file-full-path))
-										(throw 'ide-error (concat "invalid text solution, unexistant file: " file-full-path)))
+										(signal 'ide-error (concat "invalid text solution, unexistant file: " file-full-path)))
 									(ide-data-append-file-path file-full-path)
 									(ide-data-append-file-name file-name))))
 		t)
@@ -465,8 +474,8 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 (defun ide-find-file (&optional file-name-arg)
   "Will find a file in the solution. With no arguments, the minibuffer will provide completion of all the files in the solution. If file-name-arg is non-nil, it will be used to try to find that file in the solution."
   (interactive)
-  (if (not ide-current-project)
-	  (throw 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+  (if (not (ide-current-solution-valid?))
+	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
   
   (let* ((file-name (if (null file-name-arg) "" file-name-arg))
 		 ;; (files (with-current-buffer (ide-solution-files-buffer)
@@ -485,7 +494,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 				   (cl-caddr (car choice-results))
 				 (ido-completing-read "result: " (mapcar 'cl-caddr choice-results) nil t "" nil))))
 	(find-file file)
-	(message (concat "opened file: " (file-relative-name file (file-name-directory ide-current-project))))))
+	(message (concat "opened file: " (file-relative-name file (file-name-directory ide-current-solution))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide open file
@@ -634,7 +643,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		 (platform	(if param-platform
 						param-platform
 					  (concat "/p:Platform="(ide-read-with-last-value "platform" ide-vs-platforms))))
-		 (cmd		(concat ide-msbuild-path " " ide-current-project " " target " " config " " platform " "
+		 (cmd		(concat ide-msbuild-path " " ide-current-solution " " target " " config " " platform " "
 							(concat "/p:BuildProjectReferences=" (if build-refs? "true" "false")))))
 	(ide-add-to-history 'ide-compile-vs-target-history target)
 	(ide-add-to-history 'ide-compile-cmd-history cmd)
@@ -642,8 +651,8 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(ide-post-compile cmd)))
 
 (defun ide-compile-vs-solution ()
-  (if (not ide-current-project)
-	  (throw 'ide-error "Cannot compile when no solution is active. Please call 'ide-change-solution'"))
+  (if (not (ide-current-solution-valid?))
+	  (signal 'ide-error "Cannot compile when no solution is active. Please call 'ide-change-solution'"))
   (ide-compile-vs-internal "/t:Build" nil nil t))
 
 (defun ide-compile-vs-project (prefix project)
@@ -660,26 +669,26 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(ide-compile-vs-internal target nil nil nil)))
 
 (defun ide-compile-xcode-solution ()
-  (throw 'ide-error "compilation for xcode is unsupported for now..."))
+  (signal 'ide-error "compilation for xcode is unsupported for now..."))
 
 (defun ide-compile-xcode-project (project)
-  (throw 'ide-error "xcode compilation not supported for now..."))
+  (signal 'ide-error "xcode compilation not supported for now..."))
 
 (defun ide-compile-solution ()
   "Compiles the current solution."
   (interactive)
   (cond
-   ((ide-is-vs-solution ide-current-project)	(ide-compile-vs-solution))
-   ((ide-is-xcode-solution ide-current-project)	(ide-compile-xcode-solution))
-   (t											(throw 'ide-error "can't compile text solutions"))))
+   ((ide-is-vs-solution ide-current-solution)	(ide-compile-vs-solution))
+   ((ide-is-xcode-solution ide-current-solution)	(ide-compile-xcode-solution))
+   (t											(signal 'ide-error "can't compile text solutions"))))
 
 (defun ide-compile-project (project)
   "Compiles only the specified project in the current solution."
   (interactive (list (ide-get-project-arg nil)))
   (cond
-   ((ide-is-vs-solution ide-current-project)	(ide-compile-vs-project nil project))
-   ((ide-is-xcode-solution ide-current-project)	(ide-compile-xcode-project project))
-   (t											(throw 'ide-error "can't compile text solutions"))))
+   ((ide-is-vs-solution ide-current-solution)	(ide-compile-vs-project nil project))
+   ((ide-is-xcode-solution ide-current-solution)	(ide-compile-xcode-project project))
+   (t											(signal 'ide-error "can't compile text solutions"))))
 
 (defun ide-quick-compile ()
   "Perform the last compilation action again."
@@ -712,16 +721,16 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 (defun ide-get-tags-file ()
   "Returns the tags file for this solution."
-  (if (not ide-current-project)
-	  (throw 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+  (if (not (ide-current-solution-valid?))
+	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
   
-  (concat (file-name-directory ide-current-project) "TAGS"))
+  (concat (file-name-directory ide-current-solution) "TAGS"))
 
 (defun ide-create-tags ()
   "Create tags file from all files in the current solution."
   (interactive)
-  (if (not ide-current-project)
-	  (throw 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+  (if (not (ide-current-solution-valid?))
+	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
 
   (let ((should-skip? (and ide-last-create-tags-process
 						   (process-live-p ide-last-create-tags-process)
@@ -781,8 +790,9 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   :lighter " ide"
   :keymap 'ide-mode-map)
 
-(if (and (boundp 'ide-default-current-project)
-		 (not (string= ide-default-current-project "")))
-	(ide-change-solution ide-default-current-project))
+(if (and (boundp 'ide-default-current-solution)
+		 (stringp ide-default-current-solution)
+		 (not (string= ide-default-current-solution "")))
+	(ide-change-solution ide-default-current-solution))
 
 (provide 'ide)
