@@ -183,7 +183,7 @@
    ((ide-is-xcode-solution ide-current-solution)				(ide-parse-xcode-solution ide-current-solution))
    ((ide-try-to-parse-text-solution ide-current-solution)	t)
    (t (signal 'ide-error (concat "unsupported solution type for project file: "
-								(file-name-nondirectory ide-current-solution))))))
+								 (file-name-nondirectory ide-current-solution))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide utils
@@ -224,8 +224,9 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 						  do (progn (beginning-of-line)
 									(set-mark (point))
 									(end-of-line)
-									(let ((line-str (buffer-substring (region-beginning) (region-end))))
-									  (funcall line-parser-function line-str))
+									(let ((line-str (buffer-substring (region-beginning) (region-end)))
+										  (line-num	(line-number-at-pos)))
+									  (funcall line-parser-function line-num line-str))
 									(forward-line)
 									line-num)))
 		(kill-buffer buffer)))))
@@ -251,7 +252,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	
 	(let ((project-choice (completing-read (concat "project (default: " default-project "): ")
 										   projects nil t "" 'ide-project-history)))
-						 (if (string= project-choice "") default-project project-choice))))
+	  (if (string= project-choice "") default-project project-choice))))
 ;;(ide-get-project-arg nil)
 
 (defun ide-read-with-last-value (id &optional options)
@@ -306,22 +307,22 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (or (string-match ".vcproj" line-str)
 	  (string-match ".vcxproj" line-str)))
 
-(defun ide-accumulate-vs-project-file (project-file-dir project-name project-full-path line-str)
+(defun ide-accumulate-vs-project-file (project-file-dir project-name project-full-path line-num line-str)
   (if (or (string-match "ClInclude" line-str)
-		  (string-match "ClCompile" line-str))
+		  (string-match "ClCompile" line-str)
+		  (string-match "CustomBuild" line-str))
 	  (let ((substrs (ide-get-substrings line-str)))
-		(if (not substrs)
-			(signal 'ide-error "invalid ClCompile / ClInclude line..."))
-		(let* ((parsed-project-file (car substrs))
-			   (project-file (if (file-name-absolute-p parsed-project-file)
-								 parsed-project-file
-							   (concat project-file-dir parsed-project-file)))
-			   (absolute-project-file (expand-file-name project-file))
-			   (project-file-name (file-name-nondirectory absolute-project-file)))
-		  (ide-data-append-file-path absolute-project-file)
-		  (ide-data-append-file-name project-file-name)
-		  (ide-data-append-project-name project-name)
-		  (ide-data-append-project-path project-full-path)))))
+		(if substrs
+			(let* ((parsed-project-file (car substrs))
+				   (project-file (if (file-name-absolute-p parsed-project-file)
+									 parsed-project-file
+								   (concat project-file-dir parsed-project-file)))
+				   (absolute-project-file (expand-file-name project-file))
+				   (project-file-name (file-name-nondirectory absolute-project-file)))
+			  (ide-data-append-file-path absolute-project-file)
+			  (ide-data-append-file-name project-file-name)
+			  (ide-data-append-project-name project-name)
+			  (ide-data-append-project-path project-full-path))))))
 
 (defun ide-parse-vs-project (project-file)
   "Will parse provided visual studio .sln file and accumulate all the source file referenced by that solution."
@@ -331,9 +332,9 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((project-file-dir (file-name-directory project-file))
 		(project-name (file-name-sans-extension (file-name-nondirectory project-file)))
 		(project-full-path (expand-file-name project-file)))
-   (ide-parse-file-by-line project-file
-						   (lambda (line-str) (ide-accumulate-vs-project-file
-											   project-file-dir project-name project-full-path line-str)))))
+	(ide-parse-file-by-line project-file
+							(lambda (line-num line-str) (ide-accumulate-vs-project-file
+														 project-file-dir project-name project-full-path line-num line-str)))))
 
 ;;(ide-parse-vs-project "e:/UnrealEngine/Engine/Intermediate/ProjectFiles/UE4.vcxproj")
 ;;(ide-parse-vs-project "e:/UnrealEngine/Engine/Intermediate/ProjectFiles/BlankProgram.vcxproj")
@@ -344,7 +345,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
   (let ((sln-path (file-name-directory sln-file)))
 	(ide-parse-file-by-line sln-file
-							(lambda (current-line)
+							(lambda (line-num current-line)
 							  (let ((relative-project (ide-get-line-project current-line '(".vcxproj" ".vcproj"))))
 								(if relative-project
 									(ide-parse-vs-project (concat sln-path relative-project))))))))
@@ -366,7 +367,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 ;; example line from xcode project file
 ;;60B3E4D93D861A6F537745E8 /* Pawn.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.c.h; name = "Pawn.h"; path = "../../Source/Runtime/Engine/Classes/GameFramework/Pawn.h"; sourceTree = SOURCE_ROOT; };
 
-(defun ide-accumulate-xcode-project-file (project-file-dir project-name project-full-path line-str)
+(defun ide-accumulate-xcode-project-file (project-file-dir project-name project-full-path line-num line-str)
   "Will accumulate all the source files in the project file."
   (if (and (string-match "isa = PBXFileReference" line-str)
 		   (or (string-match "explicitFileType = sourcecode" line-str)
@@ -374,7 +375,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		   (string-match "path = " line-str))
 	  (let ((substrs (ide-get-substrings line-str)))
 		(if (not substrs)
-			(signal 'ide-error (concat "unexpected syntax il .xcodeproj file on line: " line-str)))
+			(signal 'ide-error (concat "unexpected syntax in " project-full-path " on line(" (number-to-string line-num) "\): \"" line-str "\"")))
 		(let* ((parsed-project-file (let ((file-str (cl-loop for str in substrs if (file-exists-p (concat project-file-dir str)) return str)))
 									  (if (not file-str)
 										  (signal 'ide-error (concat "could not parse valid file path on line: " line-str))
@@ -395,9 +396,9 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		(project-name (file-name-sans-extension (file-name-nondirectory project-file)))
 		(project-full-path (expand-file-name project-file))
 		(project-content-file (concat project-file "/project.pbxproj")))
-   (ide-parse-file-by-line project-content-file
-						   (lambda (line-str) (ide-accumulate-xcode-project-file
-											   project-file-dir project-name project-full-path line-str)))))
+	(ide-parse-file-by-line project-content-file
+							(lambda (line-str) (ide-accumulate-xcode-project-file
+												project-file-dir project-name project-full-path line-num line-str)))))
 
 (defun ide-remove-xcode-group (project-line)
   (if project-line
@@ -410,7 +411,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((sln-path (file-name-directory current-solution))
 		(sln-contents-file (concat current-solution "/contents.xcworkspacedata")))
 	(ide-parse-file-by-line sln-contents-file
-							(lambda (current-line)
+							(lambda (line-num current-line)
 							  (let ((relative-project (ide-remove-xcode-group (ide-get-line-project current-line '(".xcodeproj")))))
 								(if relative-project
 									(ide-parse-xcode-project (concat sln-path relative-project))))))))
@@ -453,14 +454,14 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (if (file-exists-p sln-file)
 	  (let ((sln-path (file-name-directory sln-file)))
 		(ide-parse-file-by-line sln-file
-								(lambda (line-str)
+								(lambda (line-num line-str)
 								  (let* ((file (if (file-name-absolute-p line-str)
 												   line-str
 												 (concat sln-path line-str)))
 										 (file-full-path (expand-file-name file))
 										 (file-name (file-name-nondirectory file)))
 									(if (not (file-exists-p file-full-path))
-										(signal 'ide-error (concat "invalid text solution, unexistant file: " file-full-path)))
+										(signal 'ide-error (concat "invalid text solution on line " (number-to-string line-num) ", unexistant file: \"" file-full-path "\"")))
 									(ide-data-append-file-path file-full-path)
 									(ide-data-append-file-name file-name))))
 		t)
@@ -592,31 +593,31 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (delete-other-windows))
 
 (defun ide-grep-project (project searched-str)
-    "grep expression in specified project files"
-	(interactive
-	 (let ((interactive-project (ide-get-project-arg t))
-		   (interactive-searched-str (let* ((word (ide-current-word-or-region))
-											(input (read-string (concat "Search solution for (default: \"" word "\"): ")
-																nil 'ide-grep-history)))
-									   (if (string= input "") word input))))
-	   (list interactive-project interactive-searched-str)))
+  "grep expression in specified project files"
+  (interactive
+   (let ((interactive-project (ide-get-project-arg t))
+		 (interactive-searched-str (let* ((word (ide-current-word-or-region))
+										  (input (read-string (concat "Search solution for (default: \"" word "\"): ")
+															  nil 'ide-grep-history)))
+									 (if (string= input "") word input))))
+	 (list interactive-project interactive-searched-str)))
 
-	(let ((project-files (cl-loop for f in (ide-data-file-paths)
-								  for p in (ide-data-projects)
-								  if (string= p project) collect f)))
-	  (ide-grep searched-str project-files)))
+  (let ((project-files (cl-loop for f in (ide-data-file-paths)
+								for p in (ide-data-projects)
+								if (string= p project) collect f)))
+	(ide-grep searched-str project-files)))
 
 ;; (ide-grep-project "TestProject" "actor")
 ;; (ide-grep-project "UE4" "DrawDebugSphere")
 
 (defun ide-grep-solution (searched-str)
-    "grep expression in entire solution."
-	(interactive (list (let* ((word (ide-current-word-or-region))
-							  (input (read-string (concat "Search solution for (default: \"" word "\"): ")
-												  nil 'ide-grep-history)))
-						 (if (string= input "") word input))))
+  "grep expression in entire solution."
+  (interactive (list (let* ((word (ide-current-word-or-region))
+							(input (read-string (concat "Search solution for (default: \"" word "\"): ")
+												nil 'ide-grep-history)))
+					   (if (string= input "") word input))))
 
-	(ide-grep searched-str (ide-data-file-paths)))
+  (ide-grep searched-str (ide-data-file-paths)))
 
 ;; (ide-grep-solution "sphere")
 
@@ -705,12 +706,12 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
        (buffer-live-p buffer)
        (string-match "compilation" (buffer-name buffer))
        (string-match "finished" string))
-    (progn
-      (delete-other-windows)
-	  (if (string= "*compilation*" (buffer-name (current-buffer)))
-		  (switch-to-next-buffer))
-	  (bury-buffer "*compilation*")
-	  (ide-message "compilation successfull" "green"))
+	  (progn
+		(delete-other-windows)
+		(if (string= "*compilation*" (buffer-name (current-buffer)))
+			(switch-to-next-buffer))
+		(bury-buffer "*compilation*")
+		(ide-message "compilation successfull" "green"))
 	(progn
 	  (ide-message "compilation failed" "red"))))
 
