@@ -63,6 +63,16 @@
   :type 'string
   :group 'ide)
 
+(defcustom ide-additionnal-source-paths nil
+  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`"
+  :type 'sexp
+  :group 'ide)
+
+(defcustom ide-extensions '("cpp" "h" "inl")
+  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`"
+  :type 'sexp
+  :group 'ide)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
 
@@ -157,6 +167,7 @@
 		  (ide-reset-data)
 		  (setq ide-current-solution absolute-solution-file)
 		  (ide-parse-current-solution)
+          (ide-parse-additional-folders)
 		  (let* ((file-count (ide-data-size))
 				 (msg (concat "Now using solution file: " (file-name-nondirectory absolute-solution-file)
 							  " [parsed " (number-to-string file-count) " files]")))
@@ -297,6 +308,42 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 ;;(ide-get-line-project "as;dfkljasflkjsf asdf \"adsfdsf\" lkjlkjlkj \"toto.vcxproj\" dsafsdf \"blub\"..." '("abc" "vcxproj"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; additionnal folder parsing
+
+(defun ide-try-to-add-file (original-path file extension)
+  "Tries to add the file into the solution data, if it has the right extension"
+  (let ((path-name (file-name-nondirectory (directory-file-name original-path))))
+    (cl-loop for ext in extension
+             if (string-suffix-p ext file)
+             do (progn (ide-data-append-file-path (expand-file-name file))
+                       ;;(message (concat "adding file " file))
+                       (ide-data-append-file-name (file-name-nondirectory file))
+                       (ide-data-append-project-name path-name)
+                       (ide-data-append-project-path original-path)))))
+
+(defun ide-parse-folder (original-folder current-folder extensions)
+  "Will try to gather all files of `extension` in `folder`"
+  (cl-loop for file in (directory-files current-folder)
+           if (and (not (string= file "."))
+                   (not (string= file "..")))
+           do (let ((file-path (concat (file-name-as-directory current-folder) file)))
+                ;;(message (concat "checking file: " file-path))
+                (cond ((file-directory-p file-path)   (ide-parse-folder original-folder file-path extensions))
+                      ((file-regular-p file-path)     (ide-try-to-add-file original-folder file-path extensions))))))
+
+(defun ide-parse-additional-folders ()
+  "Will try to gather all files of extension in `ide-extensions` from the list of directories `ide-additionnal-source-paths`."
+  (cl-loop for folder in ide-additionnal-source-paths
+           if (and (file-exists-p folder)
+                   (file-directory-p folder))
+           do (progn (message (concat "parsing additionnal folder: " folder))
+                     (ide-parse-folder folder folder ide-extensions))))
+
+;; (let ((folder "w:/Main/external/technology-group/gear/")
+;;       (ide-extensions '("cpp" "h" "inl")))
+;;   (ide-parse-folder folder folder ide-extensions))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide visual studio functions
 
 (defun ide-is-vs-solution (file)
@@ -396,8 +443,8 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		(project-full-path (expand-file-name project-file))
 		(project-content-file (concat project-file "/project.pbxproj")))
 	(ide-parse-file-by-line project-content-file
-							(lambda (line-str) (ide-accumulate-xcode-project-file
-												project-file-dir project-name project-full-path line-num line-str)))))
+							(lambda (line-num line-str) (ide-accumulate-xcode-project-file
+														 project-file-dir project-name project-full-path line-num line-str)))))
 
 (defun ide-remove-xcode-group (project-line)
   (if project-line
@@ -642,7 +689,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 					  (concat "/p:Configuration=\""(ide-read-with-last-value "config" ide-vs-configurations) "\"")))
 		 (platform	(if param-platform
 						param-platform
-					  (concat "/p:Platform="(ide-read-with-last-value "platform" ide-vs-platforms))))
+					  (concat "/p:Platform=\""(ide-read-with-last-value "platform" ide-vs-platforms) "\"")))
 		 (cmd		(concat ide-msbuild-path " " ide-current-solution " " target " " config " " platform " "
 							(concat "/p:BuildProjectReferences=" (if build-refs? "true" "false")))))
 	(ide-add-to-history 'ide-compile-vs-target-history target)
@@ -665,7 +712,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 											  nil 'ide-compile-project-prefix-history)))
 			  (if (not (string= prefix-input "")) prefix-input last-prefix))))
 
-  (let ((target (concat "/t:" prefix project)))
+  (let ((target (concat "/t:\"" prefix project "\"")))
 	(ide-compile-vs-internal target nil nil nil)))
 
 (defun ide-compile-xcode-solution ()
@@ -748,12 +795,12 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 				(cl-loop for f in files do (insert (concat f " ")))
 				(write-file temp-file-name nil)
 				(message (concat "generating " tags-file "..."))
+				(setq ide-last-create-tags-process-stat-time (current-time))
 				(setq ide-last-create-tags-process
 					  (start-process-shell-command "ide-create-tags"
 												   (make-temp-name "ide-create-tags")
 												   (concat "cat " temp-file-name " | xargs -n 50 " ide-tags-generator " -f " tags-file " -a ")))
-				(set-process-sentinel ide-last-create-tags-process 'ide-create-tags-process-sentinel)
-				(setq ide-last-create-tags-process-stat-time (current-time))))
+				(set-process-sentinel ide-last-create-tags-process 'ide-create-tags-process-sentinel)))
 		  (kill-buffer files-cache-buffer))))))
 
 (defun ide-create-tags-process-sentinel (process event)
