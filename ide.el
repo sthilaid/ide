@@ -641,11 +641,11 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 (defun ide-grep-project (project searched-str)
   "grep expression in specified project files"
   (interactive
-   (let ((interactive-project (ide-get-project-arg t))
-		 (interactive-searched-str (let* ((word (ide-current-word-or-region))
+   (let ((interactive-searched-str (let* ((word (ide-current-word-or-region))
 										  (input (read-string (concat "Search solution for (default: \"" word "\"): ")
 															  nil 'ide-grep-history)))
-									 (if (string= input "") word input))))
+									 (if (string= input "") word input)))
+         (interactive-project (ide-get-project-arg t)))
 	 (list interactive-project interactive-searched-str)))
 
   (let ((project-files (cl-loop for f in (ide-data-file-paths)
