@@ -805,7 +805,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 (defun ide-create-tags-process-sentinel (process event)
   "Sentinel called when a ide-create-tags process changes status."
-  (let* ((duration		(time-subtract ide-last-create-tags-process-stat-time (current-time)))
+  (let* ((duration		(time-subtract (current-time) ide-last-create-tags-process-stat-time))
 		 (duration-str	(format-time-string "%M minutes %S secs" duration)))
 	(cond ((string= event "finished\n") (progn (visit-tags-table (ide-get-tags-file))
 											   (ide-message (concat "'ide-create-tags' completed in " duration-str ".") "green")))
