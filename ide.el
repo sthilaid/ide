@@ -559,7 +559,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 						 (replace-regexp-in-string "cpp" "h" file-ext)
 					   (if (string-match-p "h" file-ext)
 						   (replace-regexp-in-string "h" "inl" file-ext)
-						 (if (string-match-p ".inl" file-ext)
+						 (if (string-match-p "inl" file-ext)
 						   (replace-regexp-in-string "inl" "cpp" file-ext)
 						 file-ext)))))
 	  (let ((next-file (concat (file-name-directory file) (file-name-base file-no-dir) "." next-ext)))
