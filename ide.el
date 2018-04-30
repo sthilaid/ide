@@ -378,6 +378,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((project-file-dir (file-name-directory project-file))
 		(project-name (file-name-sans-extension (file-name-nondirectory project-file)))
 		(project-full-path (expand-file-name project-file)))
+    (message (concat "Accumulating files for project " project-name))
 	(ide-parse-file-by-line project-file
 							(lambda (line-num line-str) (ide-accumulate-vs-project-file
 														 project-file-dir project-name project-full-path line-num line-str)))))
