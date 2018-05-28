@@ -693,11 +693,11 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		 (platform	(if param-platform
 						param-platform
 					  (concat "/p:Platform=\""(ide-read-with-last-value "platform" ide-vs-platforms) "\"")))
-		 (cmd		(concat ide-msbuild-path " " ide-current-solution " " target " " config " " platform " "
+		 (cmd		(concat ide-msbuild-path " \"" ide-current-solution "\" " target " " config " " platform " "
 							(concat "/p:BuildProjectReferences=" (if build-refs? "true" "false")))))
 	(ide-add-to-history 'ide-compile-vs-target-history target)
 	(ide-add-to-history 'ide-compile-cmd-history cmd)
-	(compile cmd)
+    (compile cmd)
 	(ide-post-compile cmd)))
 
 (defun ide-compile-vs-solution ()
