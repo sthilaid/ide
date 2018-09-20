@@ -68,7 +68,7 @@
   :type 'sexp
   :group 'ide)
 
-(defcustom ide-extensions '("cpp" "h" "inl")
+(defcustom ide-extensions '("cpp" "h" "inl" "js" "html" "py")
   "List of additionnal directories to parse all and add all the files of extension `ide-extensions`"
   :type 'sexp
   :group 'ide)
@@ -191,7 +191,8 @@
   (message "Parsing solution file...")
   (cond
    ((ide-is-vs-solution ide-current-solution)				(ide-parse-vs-solution ide-current-solution))
-   ((ide-is-xcode-solution ide-current-solution)				(ide-parse-xcode-solution ide-current-solution))
+   ((ide-is-xcode-solution ide-current-solution)			(ide-parse-xcode-solution ide-current-solution))
+   ((ide-is-directory-solution ide-current-solution)		(ide-parse-directory-solution ide-current-solution))
    ((ide-try-to-parse-text-solution ide-current-solution)	t)
    (t (signal 'ide-error (concat "unsupported solution type for project file: "
 								 (file-name-nondirectory ide-current-solution))))))
@@ -462,6 +463,23 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 							  (let ((relative-project (ide-remove-xcode-group (ide-get-line-project current-line '(".xcodeproj")))))
 								(if relative-project
 									(ide-parse-xcode-project (concat sln-path relative-project))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; directory solution
+
+(defun ide-is-directory-solution (absolute-solution-file)
+  (file-directory-p absolute-solution-file))
+
+(defun ide-parse-directory-solution (solution-dir)
+  "Will use all the files in the provided directory as files in the solution"
+  (if (not (file-directory-p solution-dir))
+	  nil
+	(let ((solution-name (file-name-nondirectory solution-dir)))
+	  (message (concat "Accumulating files for directory " solution-name))
+	  (ide-data-append-project-name solution-name)
+	  (ide-data-append-project-path solution-name)
+
+	  (ide-parse-folder solution-dir solution-dir ide-extensions))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; internal ide text projects functions
