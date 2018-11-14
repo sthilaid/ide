@@ -563,6 +563,41 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(message (concat "opened file: " (file-relative-name file (file-name-directory ide-current-solution))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide include file (c/cpp)
+
+(defun ide-include-file ()
+  "Will add a #include statement with chosen header file within the solution."
+  (interactive)
+  (if (not (ide-current-solution-valid?))
+	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+  
+  (let* ((file-name "")
+		 (files (ide-data-file-paths))
+		 (options (ide-data-file-names))
+		 (choice (ido-completing-read "ide file: " options nil t file-name 'ide-files-history))
+
+		 ;; (choice-idx (cl-position choice options :test (lambda (x y) (string= x y))))
+		 ;; (file (nth choice-idx files))
+
+		 (choice-results (cl-loop for option being the element of options using (index i)
+                                  for file being the element of files
+                                  if (string= choice option) collect (list i option file)))
+		 (file (if (= (length choice-results) 1)
+				   (cl-caddr (car choice-results))
+				 (ido-completing-read "result: " (mapcar 'cl-caddr choice-results) nil t "" nil)))
+         (relative-file (file-relative-name file (file-name-directory ide-current-solution))))
+    (progn ;;save-excursion
+      (goto-char 0)
+      (search-forward "#include" nil t 3)
+      (beginning-of-line)
+      (indent-for-tab-command)
+      (let ((include-txt (concat "#include \"" relative-file "\"\n")))
+        (insert include-txt)
+        (forward-line -1)
+        (message (concat "added include: '" include-txt "'"))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide open file
 
 (defun ide-get-next-file (file)
@@ -843,6 +878,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(define-key map (kbd "C-M-'") 'ide-find-file)
 	(define-key map (kbd "M-o") 'ide-find-other-file)
 	(define-key map (kbd "C-M-o") 'ide-find-and-create-other-file)
+	(define-key map (kbd "C-i") 'ide-include-file)
 
 	(define-key map (kbd "<f7>")	'ide-quick-compile)
 	(define-key map (kbd "M-<f7>")	'ide-compile-solution)
