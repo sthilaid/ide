@@ -74,6 +74,38 @@
   :group 'ide)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide config
+
+(defvar ide-configs)
+(setq ide-configs nil)
+
+(defun ide-config-create (config-name default-current-solution extensions vs-configurations
+                                      vs-platforms additionnal-source-paths)
+  "Create a new config and append it to the list of available configs"
+  (setq ide-configs (cons (cons config-name (vector config-name default-current-solution extensions vs-configurations
+                                                    vs-platforms additionnal-source-paths))
+                          ide-configs)))
+
+(defun ide-config-name (config)
+  (elt config 0))
+
+(defun ide-config-default-current-solution (config)
+  (elt config 1))
+
+(defun ide-config-extensions (config)
+  (elt config 2))
+
+(defun ide-config-configurations (config)
+  (elt config 3))
+
+(defun ide-config-platforms (config)
+  (elt config 4))
+
+(defun ide-config-additionnal-source-paths (config)
+  (elt config 5))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
 
 ;; will hold the current solution file path (set by ide-change-solution)
@@ -142,6 +174,24 @@
   (message "ide-data was reset..."))
 
 (define-error 'ide-error "unhandled IDE error occured...")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ide use config
+
+(defun ide-use-config (config-name)
+  "Use one of the predefined configs and apply it."
+  (interactive (list (completing-read "config name: " (mapcar 'car ide-configs) nil t "" 'ide-project-history)))
+  (let* ((config-pair (assoc (intern config-name) ide-configs))
+         (config (if config-pair (cdr config-pair) nil)))
+    (if (not config)
+        (signal 'ide-error (concat "invalid config name: " config-name))
+      (progn
+        (setq ide-default-current-solution (ide-config-default-current-solution config))
+        (setq ide-extensions (ide-config-extensions config))
+        (setq ide-vs-configurations (ide-config-configurations config))
+        (setq ide-vs-platforms (ide-config-platforms config))
+        (setq ide-additionnal-source-paths (ide-config-additionnal-source-paths config))
+        (ide-change-solution ide-default-current-solution)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide change solution
@@ -357,6 +407,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 (defun ide-accumulate-vs-project-file (project-file-dir project-name project-full-path line-num line-str)
   (if (or (string-match "ClInclude" line-str)
 		  (string-match "ClCompile" line-str)
+		  (string-match "Compile" line-str)
 		  (string-match "CustomBuild" line-str))
 	  (let ((substrs (ide-get-substrings line-str)))
 		(if substrs
@@ -374,7 +425,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 (defun ide-parse-vs-project (project-file)
   "Will parse provided visual studio .sln file and accumulate all the source file referenced by that solution."
   (if (not (file-exists-p project-file))
-	  (signal 'ide-error "invalid project-file"))
+	  (signal 'ide-error (concat "invalid project-file: " project-file)))
   
   (let ((project-file-dir (file-name-directory project-file))
 		(project-name (file-name-sans-extension (file-name-nondirectory project-file)))
@@ -394,7 +445,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((sln-path (file-name-directory sln-file)))
 	(ide-parse-file-by-line sln-file
 							(lambda (line-num current-line)
-							  (let ((relative-project (ide-get-line-project current-line '(".vcxproj" ".vcproj"))))
+							  (let ((relative-project (ide-get-line-project current-line '(".vcxproj" ".vcproj" ".csproj"))))
 								(if relative-project
 									(ide-parse-vs-project (concat sln-path relative-project))))))))
 
@@ -878,8 +929,8 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(define-key map (kbd "C-M-'") 'ide-find-file)
 	(define-key map (kbd "M-o") 'ide-find-other-file)
 	(define-key map (kbd "C-M-o") 'ide-find-and-create-other-file)
-	(define-key map (kbd "C-i") 'ide-include-file)
 
+	(define-key map (kbd "C-M-i")   'ide-include-file)
 	(define-key map (kbd "<f7>")	'ide-quick-compile)
 	(define-key map (kbd "M-<f7>")	'ide-compile-solution)
 	(define-key map (kbd "C-<f7>")	'ide-compile-project)
