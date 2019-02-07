@@ -73,6 +73,16 @@
   :type 'sexp
   :group 'ide)
 
+(defcustom ide-compile-directory-solution-pre ""
+  "Manual compilation options before the all files are added"
+  :type 'string
+  :group 'ide)
+
+(defcustom ide-compile-directory-solution-post ""
+  "Manual compilation options afterthe all files are added"
+  :type 'string
+  :group 'ide)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide config
 
@@ -828,20 +838,29 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 (defun ide-compile-xcode-project (project)
   (signal 'ide-error "xcode compilation not supported for now..."))
 
+(defun ide-compile-directory-solution ()
+  (let* ((files (ide-data-file-paths))
+         (cmd (concat (cl-reduce (lambda (acc x) (concat acc " " x)) files :initial-value ide-compile-directory-solution-pre)
+                      ide-compile-directory-solution-post)))
+    (ide-add-to-history 'ide-compile-cmd-history cmd)
+    (compile cmd)
+    (ide-post-compile cmd)))
+
 (defun ide-compile-solution ()
   "Compiles the current solution."
   (interactive)
   (cond
    ((ide-is-vs-solution ide-current-solution)	(ide-compile-vs-solution))
    ((ide-is-xcode-solution ide-current-solution)	(ide-compile-xcode-solution))
+   ((ide-is-directory-solution ide-current-solution)    (ide-compile-directory-solution))
    (t											(signal 'ide-error "can't compile text solutions"))))
 
 (defun ide-compile-project (project)
   "Compiles only the specified project in the current solution."
   (interactive (list (ide-get-project-arg nil)))
   (cond
-   ((ide-is-vs-solution ide-current-solution)	(ide-compile-vs-project nil project))
-   ((ide-is-xcode-solution ide-current-solution)	(ide-compile-xcode-project project))
+   ((ide-is-vs-solution ide-current-solution)           (ide-compile-vs-project nil project))
+   ((ide-is-xcode-solution ide-current-solution)        (ide-compile-xcode-project project))
    (t											(signal 'ide-error "can't compile text solutions"))))
 
 (defun ide-quick-compile ()
