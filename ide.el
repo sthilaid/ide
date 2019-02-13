@@ -969,4 +969,5 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		 (not (string= ide-default-current-solution "")))
 	(ide-change-solution ide-default-current-solution))
 
+(require 'ide-browser)
 (provide 'ide)
