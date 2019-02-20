@@ -83,18 +83,39 @@
   :type 'string
   :group 'ide)
 
+(defcustom ide-compile-directory-solution-lambda nil
+  "if non nil, this function will be used to compile the files"
+  :type 'function
+  :group 'ide)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide config
 
 (defvar ide-configs)
 (setq ide-configs nil)
 
-(defun ide-config-create (config-name default-current-solution extensions vs-configurations
-                                      vs-platforms additionnal-source-paths)
-  "Create a new config and append it to the list of available configs"
-  (setq ide-configs (cons (cons config-name (vector config-name default-current-solution extensions vs-configurations
-                                                    vs-platforms additionnal-source-paths))
-                          ide-configs)))
+(defun ide-config-create (config-name default-current-solution &rest optional-args)
+  "Create a new config and append it to the list of available configs. Optional args are 
+        :extensions
+        :additionnal-source-paths
+        :vs-configurations
+        :vs-platforms
+        :directory-solution-pre 
+        :directory-solution-post
+        :directory-solution-lambda
+   and must be passed last in key value format eg: :key value"
+  
+  (let ((extensions                 (plist-get optional-args :extensions))
+        (additionnal-source-paths   (plist-get optional-args :additionnal-source-paths))
+        (vs-configurations          (plist-get optional-args :vs-configurations))
+        (vs-platforms               (plist-get optional-args :vs-platforms))
+        (directory-solution-pre     (plist-get optional-args :directory-solution-pre))
+        (directory-solution-post    (plist-get optional-args :directory-solution-post))
+        (directory-solution-lambda  (plist-get optional-args :directory-solution-lambda)))
+    (setq ide-configs (cons (cons config-name (vector config-name default-current-solution extensions vs-configurations
+                                                      vs-platforms additionnal-source-paths directory-solution-pre directory-solution-post
+                                                      directory-solution-lambda))
+                            ide-configs))))
 
 (defun ide-config-name (config)
   (elt config 0))
@@ -113,6 +134,15 @@
 
 (defun ide-config-additionnal-source-paths (config)
   (elt config 5))
+
+(defun ide-config-compile-directory-solution-pre (config)
+  (elt config 6))
+
+(defun ide-config-compile-directory-solution-post (config)
+  (elt config 7))
+
+(defun ide-config-compile-directory-solution-lambda (config)
+  (elt config 8))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -201,6 +231,9 @@
         (setq ide-vs-configurations (ide-config-configurations config))
         (setq ide-vs-platforms (ide-config-platforms config))
         (setq ide-additionnal-source-paths (ide-config-additionnal-source-paths config))
+        (setq ide-compile-directory-solution-pre (ide-config-compile-directory-solution-pre config))
+        (setq ide-compile-directory-solution-post (ide-config-compile-directory-solution-post config))
+        (setq ide-compile-directory-solution-lambda (ide-config-compile-directory-solution-lambda config))
         (ide-change-solution ide-default-current-solution)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -839,12 +872,15 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (signal 'ide-error "xcode compilation not supported for now..."))
 
 (defun ide-compile-directory-solution ()
-  (let* ((files (ide-data-file-paths))
-         (cmd (concat (cl-reduce (lambda (acc x) (concat acc " " x)) files :initial-value ide-compile-directory-solution-pre)
-                      ide-compile-directory-solution-post)))
-    (ide-add-to-history 'ide-compile-cmd-history cmd)
-    (compile cmd)
-    (ide-post-compile cmd)))
+  (let* ((files (ide-data-file-paths)))
+    (if ide-compile-directory-solution-lambda
+        (progn (funcall ide-compile-directory-solution-lambda files)
+               (ide-post-compile "done"))
+      (let ((cmd (concat (cl-reduce (lambda (acc x) (concat acc " \"" x "\"")) files :initial-value ide-compile-directory-solution-pre)
+                         ide-compile-directory-solution-post)))
+        (ide-add-to-history 'ide-compile-cmd-history cmd)
+        (compile cmd)
+        (ide-post-compile cmd)))))
 
 (defun ide-compile-solution ()
   "Compiles the current solution."
