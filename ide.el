@@ -106,7 +106,7 @@
    and must be passed last in key value format eg: :key value"
   
   (let ((extensions                 (plist-get optional-args :extensions))
-        (additionnal-source-paths   (plist-get optional-args :additionnal-source-paths))
+        (additionnal-source-paths   (or (plist-get optional-args :additionnal-source-paths) ""))
         (vs-configurations          (plist-get optional-args :vs-configurations))
         (vs-platforms               (plist-get optional-args :vs-platforms))
         (directory-solution-pre     (plist-get optional-args :directory-solution-pre))
