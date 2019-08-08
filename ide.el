@@ -974,6 +974,79 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		  (t (ide-message (concat "'ide-create-tags' failed after " duration-str " with event: " event) "red")))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; codesearch support
+
+(setq ide-cindex-path "~/hacking/go/bin/cindex")
+(setq ide-csearch-path "~/hacking/go/bin/csearch")
+
+(defvar ide-last-create-cindex-process)
+(setq ide-last-create-cindex-process nil)
+
+(defvar ide-last-create-cindex-process-stat-time)
+(setq ide-last-create-cindex-process-stat-time (current-time))
+
+(defun ide-get-codesearch-index ()
+  "Returns the tags file for this solution."
+  (if (not (ide-current-solution-valid?))
+	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+
+  (concat (file-name-directory ide-current-solution) ".csearchindex"))
+
+(defun ide-create-codesearch-index ()
+  "Create codesearch index with all files in the current solution."
+  (interactive)
+  (if (not (ide-current-solution-valid?))
+	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+
+  (let ((should-skip? (and ide-last-create-cindex-process
+						   (process-live-p ide-last-create-cindex-process)
+						   (not (y-or-n-p "ide-create-codesearch-index process already running, restart it?")))))
+	(if should-skip?
+		(message "Skipped restarting codesearch index generation.")
+	  (let* ((cindex-file (ide-get-codesearch-index))
+			 (temp-file-name (make-temp-file "ide-mode-temp-file-cache"))
+			 (files-cache-buffer (get-buffer-create temp-file-name)))
+		;; (if (file-exists-p cindex-file)
+		;; 	(delete-file cindex-file))
+		(unwind-protect
+			(with-current-buffer files-cache-buffer
+			  (let* ((files (ide-data-file-paths)))
+				(cl-loop for f in files do (insert (concat f " ")))
+				(write-file temp-file-name nil)
+				(message (concat "generating " cindex-file "..."))
+				(setq ide-last-create-cindex-process-stat-time (current-time))
+				(setq ide-last-create-cindex-process
+					  (start-process-shell-command "ide-create-codesearch-index"
+												   (make-temp-name "ide-create-codesearch-index")
+												   (concat "cat " temp-file-name " | CSEARCHINDEX=" cindex-file " xargs -n 50 " ide-cindex-path " ")))
+				(set-process-sentinel ide-last-create-cindex-process 'ide-create-cindex-process-sentinel)))
+		  (kill-buffer files-cache-buffer))))))
+
+(defun ide-create-cindex-process-sentinel (process event)
+  "Sentinel called when a ide-create-cindex process changes status."
+  (let* ((duration		(time-subtract (current-time) ide-last-create-cindex-process-stat-time))
+		 (duration-str	(format-time-string "%M minutes %S secs" duration)))
+	(cond ((string= event "finished\n") (progn (ide-message (concat (ide-get-codesearch-index) " updated in " duration-str ".") "green")))
+		  (t (ide-message (concat "'ide-create-cindex' failed after " duration-str " with event: " event) "red")))))
+
+(defun ide-codesearch (search-flag searched-str)
+  "codesearch expression in entire solution."
+  (interactive (let* ((word (ide-current-word-or-region))
+                      (search-raw-input (read-string (concat "Search solution for (default: \"" word "\"): ")
+                                                     nil 'ide-grep-history))
+                      (input-search (if (string= search-raw-input "") word search-raw-input))
+                      (flag-raw-input (read-string (concat "with file flag: ")
+                                                   nil 'ide-grep-history))
+                      (flag-input (if (string= flag-raw-input "") nil flag-raw-input)))
+                 (list flag-input input-search)))
+
+  (let ((cindex-file (ide-get-codesearch-index)))
+    (grep-find (concat "CSEARCHINDEX=" cindex-file " "
+                       ide-csearch-path " -n "
+                       (if search-flag (concat "-f " search-flag " ") "")
+                       searched-str))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
 
 (defvar ide-mode-map
