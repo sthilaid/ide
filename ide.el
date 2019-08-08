@@ -642,7 +642,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		 ;; 		  (split-string (buffer-string) "\n" t)))
 		 (files (ide-data-file-paths))
 		 (options (ide-data-file-names))
-		 (choice (ido-completing-read "ide file: " options nil t file-name 'ide-files-history))
+		 (choice (ido-completing-read "find ide file: " options nil t file-name 'ide-files-history))
 
 		 ;; (choice-idx (cl-position choice options :test (lambda (x y) (string= x y))))
 		 ;; (file (nth choice-idx files))
@@ -668,7 +668,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let* ((file-name "")
 		 (files (ide-data-file-paths))
 		 (options (ide-data-file-names))
-		 (choice (ido-completing-read "ide file: " options nil t file-name 'ide-files-history))
+		 (choice (ido-completing-read "include ide file: " options nil t file-name 'ide-files-history))
 
 		 ;; (choice-idx (cl-position choice options :test (lambda (x y) (string= x y))))
 		 ;; (file (nth choice-idx files))
@@ -1054,9 +1054,10 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(define-key map (kbd "<C-M-backspace>") 'ide-grep-solution)
 	(define-key map (kbd "<C-M-return>") 'ide-grep-project)
 
-	(define-key map (kbd "C-M-'") 'ide-find-file)
-	(define-key map (kbd "M-o") 'ide-find-other-file)
-	(define-key map (kbd "C-M-o") 'ide-find-and-create-other-file)
+	(define-key map (kbd "C-M-'")   'ide-find-file)
+	(define-key map (kbd "M-'")     'ide-include-file)
+	(define-key map (kbd "M-o")     'ide-find-other-file)
+	(define-key map (kbd "C-M-o")   'ide-find-and-create-other-file)
 
 	(define-key map (kbd "C-M-i")   'ide-include-file)
 	(define-key map (kbd "<f7>")	'ide-quick-compile)
