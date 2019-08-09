@@ -88,6 +88,22 @@
   :type 'function
   :group 'ide)
 
+
+(defcustom ide-cindex-path "cindex"
+  "Path to the codesearch cindex binary"
+  :type 'string
+  :group 'ide)
+
+(defcustom ide-csearch-path "csearch"
+  "Path to the codesearch csearch binary"
+  :type 'string
+  :group 'ide)
+
+(defcustom ide-use-local-codesearch-index? t
+  "Path to the codesearch csearch binary"
+  :type 'boolean
+  :group 'ide)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide config
 
@@ -157,6 +173,12 @@
 
 (defvar ide-last-create-tags-process-stat-time)
 (setq ide-last-create-tags-process-stat-time (current-time))
+
+(defvar ide-last-create-cindex-process)
+(setq ide-last-create-cindex-process nil)
+
+(defvar ide-last-create-cindex-process-stat-time)
+(setq ide-last-create-cindex-process-stat-time (current-time))
 
 ;; will hold the internal data used by ide-mode
 (defvar ide-data)
@@ -976,15 +998,6 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; codesearch support
 
-(setq ide-cindex-path "~/hacking/go/bin/cindex")
-(setq ide-csearch-path "~/hacking/go/bin/csearch")
-
-(defvar ide-last-create-cindex-process)
-(setq ide-last-create-cindex-process nil)
-
-(defvar ide-last-create-cindex-process-stat-time)
-(setq ide-last-create-cindex-process-stat-time (current-time))
-
 (defun ide-get-codesearch-index ()
   "Returns the tags file for this solution."
   (if (not (ide-current-solution-valid?))
@@ -1006,19 +1019,18 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	  (let* ((cindex-file (ide-get-codesearch-index))
 			 (temp-file-name (make-temp-file "ide-mode-temp-file-cache"))
 			 (files-cache-buffer (get-buffer-create temp-file-name)))
-		;; (if (file-exists-p cindex-file)
-		;; 	(delete-file cindex-file))
 		(unwind-protect
 			(with-current-buffer files-cache-buffer
 			  (let* ((files (ide-data-file-paths)))
 				(cl-loop for f in files do (insert (concat f " ")))
 				(write-file temp-file-name nil)
-				(message (concat "generating " cindex-file "..."))
+				(message (concat "generating " (if ide-use-local-codesearch-index? cindex-file "global index") "..."))
+                (setenv "CSEARCHINDEX" (if ide-use-local-codesearch-index? cindex-file ""))
 				(setq ide-last-create-cindex-process-stat-time (current-time))
 				(setq ide-last-create-cindex-process
 					  (start-process-shell-command "ide-create-codesearch-index"
 												   (make-temp-name "ide-create-codesearch-index")
-												   (concat "cat " temp-file-name " | CSEARCHINDEX=" cindex-file " xargs -n 50 " ide-cindex-path " ")))
+												   (concat "cat " temp-file-name " | xargs " ide-cindex-path " ")))
 				(set-process-sentinel ide-last-create-cindex-process 'ide-create-cindex-process-sentinel)))
 		  (kill-buffer files-cache-buffer))))))
 
@@ -1032,17 +1044,17 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 (defun ide-codesearch (search-flag searched-str)
   "codesearch expression in entire solution."
   (interactive (let* ((word (ide-current-word-or-region))
-                      (search-raw-input (read-string (concat "Search solution for (default: \"" word "\"): ")
+                      (search-raw-input (read-string (concat "Codesearch solution for regexp (default: \"" word "\"): ")
                                                      nil 'ide-grep-history))
                       (input-search (if (string= search-raw-input "") word search-raw-input))
-                      (flag-raw-input (read-string (concat "with file flag: ")
+                      (flag-raw-input (read-string (concat "with file flag regexp: ")
                                                    nil 'ide-grep-history))
                       (flag-input (if (string= flag-raw-input "") nil flag-raw-input)))
                  (list flag-input input-search)))
 
   (let ((cindex-file (ide-get-codesearch-index)))
-    (grep-find (concat "CSEARCHINDEX=" cindex-file " "
-                       ide-csearch-path " -n "
+    (setenv "CSEARCHINDEX" (if ide-use-local-codesearch-index? cindex-file ""))
+    (grep-find (concat ide-csearch-path " -n "
                        (if search-flag (concat "-f " search-flag " ") "")
                        searched-str))))
 
@@ -1051,13 +1063,14 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 (defvar ide-mode-map
   (let ((map (make-sparse-keymap)))
-	(define-key map (kbd "<C-M-backspace>") 'ide-grep-solution)
+    (define-key map (kbd "<C-M-backspace>") 'ide-grep-solution)
 	(define-key map (kbd "<C-M-return>") 'ide-grep-project)
 
 	(define-key map (kbd "C-M-'")   'ide-find-file)
 	(define-key map (kbd "M-'")     'ide-include-file)
 	(define-key map (kbd "M-o")     'ide-find-other-file)
 	(define-key map (kbd "C-M-o")   'ide-find-and-create-other-file)
+    (define-key map (kbd "C-M-]")   'ide-codesearch)
 
 	(define-key map (kbd "C-M-i")   'ide-include-file)
 	(define-key map (kbd "<f7>")	'ide-quick-compile)
