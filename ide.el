@@ -88,7 +88,6 @@
   :type 'function
   :group 'ide)
 
-
 (defcustom ide-cindex-path "cindex"
   "Path to the codesearch cindex binary"
   :type 'string
@@ -182,6 +181,7 @@
 
 ;; will hold the internal data used by ide-mode
 (defvar ide-data)
+(setq ide-data nil)
 
 (defun ide-solution ()
   "Shows what is the current solution file."
@@ -1058,14 +1058,14 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
     (grep-find (concat ide-csearch-path " -n "
                        (if search-flag (concat "-f " search-flag " ") "")
                        (if is-case-insensitive? "-i " "")
-                       searched-str))))
+                       "\"" searched-str "\""))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
 
 (defvar ide-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "<C-M-backspace>") 'ide-grep-solution)
+	(define-key map (kbd "<C-M-backspace>") 'ide-grep-solution)
 	(define-key map (kbd "<C-M-return>") 'ide-grep-project)
 
 	(define-key map (kbd "C-M-'")   'ide-find-file)
