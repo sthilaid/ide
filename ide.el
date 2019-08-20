@@ -1041,7 +1041,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(cond ((string= event "finished\n") (progn (ide-message (concat (ide-get-codesearch-index) " updated in " duration-str ".") "green")))
 		  (t (ide-message (concat "'ide-create-cindex' failed after " duration-str " with event: " event) "red")))))
 
-(defun ide-codesearch (search-flag searched-str is-case-insensitive?)
+(defun ide-codesearch (search-flag searched-str is-case-sensitive?)
   "codesearch expression in entire solution."
   (interactive (let* ((word (ide-current-word-or-region))
                       (search-raw-input (read-string (concat "Codesearch regexp (default: \"" word "\"): ")
@@ -1050,14 +1050,14 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                       (flag-raw-input (read-string (concat "file regexp: ")
                                                    nil 'ide-grep-history))
                       (flag-input (if (string= flag-raw-input "") nil flag-raw-input))
-                      (case-insensitive-input (y-or-n-p "case insensitive search?")))
-                 (list flag-input input-search case-insensitive-input)))
+                      (case-sensitive-input (y-or-n-p "case sensitive search?")))
+                 (list flag-input input-search case-sensitive-input)))
 
   (let ((cindex-file (ide-get-codesearch-index)))
     (setenv "CSEARCHINDEX" (if ide-use-local-codesearch-index? cindex-file ""))
     (grep-find (concat ide-csearch-path " -n "
                        (if search-flag (concat "-f " search-flag " ") "")
-                       (if is-case-insensitive? "-i " "")
+                       (if is-case-sensitive? "" "-i ")
                        "\"" searched-str "\""))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
