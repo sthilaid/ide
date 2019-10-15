@@ -880,6 +880,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 			(let* ((last-prefix (if (and (boundp 'ide-compile-project-prefix-history)
 										 (listp ide-compile-project-prefix-history))
 									(car ide-compile-project-prefix-history)))
+				   ;; note: vs prefix should be the folder in which the project is *inside* visual studio (not an actual folder)
 				   (prefix-input (read-string (concat "VS prefix for " project "(" last-prefix "): ")
 											  nil 'ide-compile-project-prefix-history)))
 			  (if (not (string= prefix-input "")) prefix-input last-prefix))))
