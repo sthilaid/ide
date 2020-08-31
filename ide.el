@@ -429,9 +429,9 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 (defun ide-try-to-add-file (original-path file extension)
   "Tries to add the file into the solution data, if it has the right extension"
   (let ((path-name (file-name-nondirectory (directory-file-name original-path))))
-    (cl-loop for ext in extension
-             if (string-suffix-p ext file)
-             do (progn (ide-data-append-file-path (expand-file-name file))
+    (if (or (seq-empty-p extension)
+            (seq-some (lambda (ext) (string-suffix-p ext file)) extension))
+        (progn (ide-data-append-file-path (expand-file-name file))
                        ;;(message (concat "adding file " file))
                        (ide-data-append-file-name (file-name-nondirectory file))
                        (ide-data-append-project-name path-name)
@@ -933,18 +933,21 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 (defun ide-compilation-finish-handler (buffer string)
   "handles the *compilation buffer and prints a colored message after compilation"
-  (if (and
-       (buffer-live-p buffer)
-       (string-match "compilation" (buffer-name buffer))
-       (string-match "finished" string))
-	  (progn
-		(delete-other-windows)
-		(if (string= "*compilation*" (buffer-name (current-buffer)))
-			(switch-to-next-buffer))
-		(bury-buffer "*compilation*")
-		(ide-message "compilation successfull" "green"))
-	(progn
-	  (ide-message "compilation failed" "red"))))
+  ;; (let* ((result-buffer-name "*compilation-result*")
+  ;;        (result-buffer (get-buffer-create result-buffer-name)))
+  ;;   (switch-to-buffer result-buffer)
+  ;;   (special-mode)
+
+  (if (string-match "compilation" (buffer-name buffer))
+      (progn (switch-to-buffer "*compilation*")
+             (delete-other-windows)
+             (if (and (buffer-live-p buffer)
+                      (string-match "compilation" (buffer-name buffer))
+                      (string-match "finished" string))
+                 (progn
+                   (ide-message "compilation successfull" "green"))
+               (progn
+                 (ide-message "compilation failed" "red"))))))
 
 (add-hook 'compilation-finish-functions 'ide-compilation-finish-handler)
 
