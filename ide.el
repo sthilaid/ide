@@ -728,10 +728,8 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		   (next-ext (if (string-match-p "cpp" file-ext)
 						 (replace-regexp-in-string "cpp" "h" file-ext)
 					   (if (string-match-p "h" file-ext)
-						   (replace-regexp-in-string "h" "inl" file-ext)
-						 (if (string-match-p "inl" file-ext)
-						   (replace-regexp-in-string "inl" "cpp" file-ext)
-						 file-ext)))))
+						   (replace-regexp-in-string "h" "cpp" file-ext)
+						 file-ext))))
 	  (let ((next-file (concat (file-name-directory file) (file-name-base file-no-dir) "." next-ext)))
 		next-file))))
 
@@ -1004,7 +1002,9 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (if (not (ide-current-solution-valid?))
 	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
 
-  (concat (file-name-directory ide-current-solution) ".csearchindex"))
+  (if (file-directory-p ide-current-solution)
+      (concat (file-name-as-directory ide-current-solution) ".csearchindex")
+      (concat (file-name-directory ide-current-solution) ".csearchindex")))
 
 (defun ide-create-codesearch-index ()
   "Create codesearch index with all files in the current solution."
@@ -1054,12 +1054,14 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                       (case-sensitive-input (y-or-n-p "case sensitive search?")))
                  (list flag-input input-search case-sensitive-input)))
 
-  (let ((cindex-file (ide-get-codesearch-index)))
+  (if (require 'codesearch nil t)
+      (codesearch searched-str is-case-sensitive?)
+    (let ((cindex-file (ide-get-codesearch-index)))
     (setenv "CSEARCHINDEX" (if ide-use-local-codesearch-index? cindex-file ""))
     (grep-find (concat ide-csearch-path " -n "
                        (if search-flag (concat "-f " search-flag " ") "")
                        (if is-case-sensitive? "" "-i ")
-                       "\"" searched-str "\""))))
+                       "\"" searched-str "\"")))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
