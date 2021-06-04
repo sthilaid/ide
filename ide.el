@@ -103,6 +103,11 @@
   :type 'boolean
   :group 'ide)
 
+(defcustom ide-should-bury-compilation-buffer-on-success? t
+  "if t, the compilation buffer is automatically buried when compilation succeeds"
+  :type 'boolean
+  :group 'ide)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide config
 
@@ -118,6 +123,7 @@
         :directory-solution-pre 
         :directory-solution-post
         :directory-solution-lambda
+        :custom-vars
    and must be passed last in key value format eg: :key value"
   
   (let ((extensions                 (plist-get optional-args :extensions))
@@ -126,10 +132,12 @@
         (vs-platforms               (plist-get optional-args :vs-platforms))
         (directory-solution-pre     (plist-get optional-args :directory-solution-pre))
         (directory-solution-post    (plist-get optional-args :directory-solution-post))
-        (directory-solution-lambda  (plist-get optional-args :directory-solution-lambda)))
+        (directory-solution-lambda  (plist-get optional-args :directory-solution-lambda))
+        (custom-vars                (plist-get optional-args :custom-vars))
+        )
     (setq ide-configs (cons (cons config-name (vector config-name default-current-solution extensions vs-configurations
                                                       vs-platforms additionnal-source-paths directory-solution-pre directory-solution-post
-                                                      directory-solution-lambda))
+                                                      directory-solution-lambda custom-vars))
                             ide-configs))))
 
 (defun ide-config-name (config)
@@ -159,6 +167,8 @@
 (defun ide-config-compile-directory-solution-lambda (config)
   (elt config 8))
 
+(defun ide-config-custom-vars (config)
+  (elt config 9))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
@@ -256,6 +266,9 @@
         (setq ide-compile-directory-solution-pre (ide-config-compile-directory-solution-pre config))
         (setq ide-compile-directory-solution-post (ide-config-compile-directory-solution-post config))
         (setq ide-compile-directory-solution-lambda (ide-config-compile-directory-solution-lambda config))
+        (let ((custom-vars (ide-config-custom-vars config)))
+          (message (format "custom-vars %s" custom-vars))
+          (apply 'custom-set-variables custom-vars))
         (ide-change-solution ide-default-current-solution)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -668,7 +681,6 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 		 ;; (choice-idx (cl-position choice options :test (lambda (x y) (string= x y))))
 		 ;; (file (nth choice-idx files))
-
 		 (choice-results (cl-loop for option being the element of options using (index i)
                                   for file being the element of files
                                   if (string= choice option) collect (list i option file)))
@@ -728,10 +740,8 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		   (next-ext (if (string-match-p "cpp" file-ext)
 						 (replace-regexp-in-string "cpp" "h" file-ext)
 					   (if (string-match-p "h" file-ext)
-						   (replace-regexp-in-string "h" "inl" file-ext)
-						 (if (string-match-p "inl" file-ext)
-						   (replace-regexp-in-string "inl" "cpp" file-ext)
-						 file-ext)))))
+						   (replace-regexp-in-string "h" "cpp" file-ext)
+						 file-ext))))
 	  (let ((next-file (concat (file-name-directory file) (file-name-base file-no-dir) "." next-ext)))
 		next-file))))
 
@@ -933,18 +943,20 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 (defun ide-compilation-finish-handler (buffer string)
   "handles the *compilation buffer and prints a colored message after compilation"
-  (if (and
-       (buffer-live-p buffer)
-       (string-match "compilation" (buffer-name buffer))
-       (string-match "finished" string))
-	  (progn
-		(delete-other-windows)
-		(if (string= "*compilation*" (buffer-name (current-buffer)))
-			(switch-to-next-buffer))
-		(bury-buffer "*compilation*")
-		(ide-message "compilation successfull" "green"))
-	(progn
-	  (ide-message "compilation failed" "red"))))
+  (if ide-mode
+      (if (and
+           (buffer-live-p buffer)
+           (string-match "compilation" (buffer-name buffer))
+           (string-match "finished" string))
+	      (progn
+            (if ide-should-bury-compilation-buffer-on-success?
+                (progn (delete-other-windows)
+                       (if (string= "*compilation*" (buffer-name (current-buffer)))
+                           (switch-to-next-buffer)
+                         (bury-buffer "*compilation*"))))
+		    (ide-message "compilation successfull" "green"))
+	    (progn
+	      (ide-message "compilation failed" "red")))))
 
 (add-hook 'compilation-finish-functions 'ide-compilation-finish-handler)
 
