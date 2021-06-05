@@ -1007,7 +1007,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
   (if (file-directory-p ide-current-solution)
       (concat (file-name-as-directory ide-current-solution) ".csearchindex")
-      (concat (file-name-directory ide-current-solution) ".csearchindex")))
+    (concat (file-name-directory ide-current-solution) ".csearchindex")))
 
 (defun ide-create-codesearch-index ()
   "Create codesearch index with all files in the current solution."
@@ -1057,7 +1057,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                       (case-sensitive-input (y-or-n-p "case sensitive search?")))
                  (list flag-input input-search case-sensitive-input)))
 
-  (if (require 'codesearch nil t)
+  (if (and nil (require 'codesearch nil t)) ; not using codesearch ext for now...
       (codesearch searched-str is-case-sensitive?)
     (let ((cindex-file (ide-get-codesearch-index)))
     (setenv "CSEARCHINDEX" (if ide-use-local-codesearch-index? cindex-file ""))
