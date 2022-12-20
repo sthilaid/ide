@@ -103,6 +103,27 @@
   :type 'boolean
   :group 'ide)
 
+
+(defcustom ide-should-bury-compilation-buffer-on-success? t
+  "if t, the compilation buffer is automatically buried when compilation succeeds"
+  :type 'boolean
+  :group 'ide)
+
+(defcustom ide-solution-relative-index-path ""
+  "Path, relative to solution, where to place index files (TAGS, .csearchindex)"
+  :type 'string
+  :group 'ide)
+
+(defcustom ide-solution-relative-include-path ""
+  "Path from which to generate include statements. If unset, the solution path will be used."
+  :type 'string
+  :group 'ide)
+
+(defcustom ide-solution-include-style 'quotes
+  "Style of markers for include statements ('quotes or 'brackets)"
+  :type 'symbol
+  :group 'ide)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide config
 
@@ -118,6 +139,10 @@
         :directory-solution-pre 
         :directory-solution-post
         :directory-solution-lambda
+        :solution-relative-index-path
+        :solution-relative-include-path
+        :solution-include-style
+        :custom-vars
    and must be passed last in key value format eg: :key value"
   
   (let ((extensions                 (plist-get optional-args :extensions))
@@ -126,10 +151,16 @@
         (vs-platforms               (plist-get optional-args :vs-platforms))
         (directory-solution-pre     (plist-get optional-args :directory-solution-pre))
         (directory-solution-post    (plist-get optional-args :directory-solution-post))
-        (directory-solution-lambda  (plist-get optional-args :directory-solution-lambda)))
+        (directory-solution-lambda  (plist-get optional-args :directory-solution-lambda))
+        (solution-relative-index-path       (plist-get optional-args :solution-relative-index-path))
+        (ide-solution-relative-include-path (plist-get optional-args :solution-relative-include-path))
+        (ide-solution-include-style         (plist-get optional-args :solution-include-style))
+        (custom-vars                (plist-get optional-args :custom-vars))
+        )
     (setq ide-configs (cons (cons config-name (vector config-name default-current-solution extensions vs-configurations
                                                       vs-platforms additionnal-source-paths directory-solution-pre directory-solution-post
-                                                      directory-solution-lambda))
+                                                      directory-solution-lambda solution-relative-index-path
+                                                      ide-solution-relative-include-path ide-solution-include-style custom-vars))
                             ide-configs))))
 
 (defun ide-config-name (config)
@@ -159,6 +190,17 @@
 (defun ide-config-compile-directory-solution-lambda (config)
   (elt config 8))
 
+(defun ide-config-solution-relative-index-path (config)
+  (elt config 9))
+
+(defun ide-config-solution-relative-include-path (config)
+  (elt config 10))
+
+(defun ide-config-solution-include-style (config)
+  (elt config 11))
+
+(defun ide-config-custom-vars (config)
+  (elt config 12))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
@@ -256,6 +298,12 @@
         (setq ide-compile-directory-solution-pre (ide-config-compile-directory-solution-pre config))
         (setq ide-compile-directory-solution-post (ide-config-compile-directory-solution-post config))
         (setq ide-compile-directory-solution-lambda (ide-config-compile-directory-solution-lambda config))
+        (setq ide-solution-relative-index-path (ide-config-solution-relative-index-path config))
+        (setq ide-solution-relative-include-path (ide-config-solution-relative-include-path config))
+        (setq ide-solution-include-style (ide-config-solution-include-style config))
+        (let ((custom-vars (ide-config-custom-vars config)))
+          (message (format "custom-vars %s" custom-vars))
+          (apply 'custom-set-variables custom-vars))
         (ide-change-solution ide-default-current-solution)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -668,7 +716,6 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 		 ;; (choice-idx (cl-position choice options :test (lambda (x y) (string= x y))))
 		 ;; (file (nth choice-idx files))
-
 		 (choice-results (cl-loop for option being the element of options using (index i)
                                   for file being the element of files
                                   if (string= choice option) collect (list i option file)))
@@ -701,13 +748,19 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 		 (file (if (= (length choice-results) 1)
 				   (cl-caddr (car choice-results))
 				 (ido-completing-read "result: " (mapcar 'cl-caddr choice-results) nil t "" nil)))
-         (relative-file (file-relative-name file (file-name-directory ide-current-solution))))
+         (include-relative-path-base (if (or (string= ide-solution-relative-include-path "")
+                                             (not (file-exists-p ide-solution-relative-include-path)))
+                                         (file-name-directory ide-current-solution)
+                                       ide-solution-relative-include-path))
+         (relative-file (file-relative-name file include-relative-path-base))
+         (file-wrap-fn (cond ((eq ide-solution-include-style 'brackets) (lambda (f) (concat "<" relative-file ">")))
+                             (t (lambda (f) (concat "\"" relative-file "\""))))))
     (progn ;;save-excursion
       (goto-char 0)
       (search-forward "#include" nil t 3)
       (beginning-of-line)
       (indent-for-tab-command)
-      (let ((include-txt (concat "#include \"" relative-file "\"\n")))
+      (let ((include-txt (concat "#include " (funcall file-wrap-fn relative-file) "\n")))
         (insert include-txt)
         (forward-line -1)
         (message (concat "added include: '" include-txt "'"))))))
@@ -726,10 +779,12 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(let* ((file-no-dir (file-name-nondirectory file))
 		   (file-ext (file-name-extension file-no-dir))
 		   (next-ext (if (string-match-p "cpp" file-ext)
-						 (replace-regexp-in-string "cpp" "h" file-ext)
-					   (if (string-match-p "h" file-ext)
+						 (replace-regexp-in-string "cpp" "mold" file-ext)
+					   (if (string-match-p "mold" file-ext)
+						   (replace-regexp-in-string "mold" "h" file-ext)
+						 (if (string-match-p "h" file-ext)
 						   (replace-regexp-in-string "h" "cpp" file-ext)
-						 file-ext))))
+						 file-ext)))))
 	  (let ((next-file (concat (file-name-directory file) (file-name-base file-no-dir) "." next-ext)))
 		next-file))))
 
@@ -931,21 +986,20 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 (defun ide-compilation-finish-handler (buffer string)
   "handles the *compilation buffer and prints a colored message after compilation"
-  ;; (let* ((result-buffer-name "*compilation-result*")
-  ;;        (result-buffer (get-buffer-create result-buffer-name)))
-  ;;   (switch-to-buffer result-buffer)
-  ;;   (special-mode)
-
-  (if (string-match "compilation" (buffer-name buffer))
-      (progn (switch-to-buffer "*compilation*")
-             (delete-other-windows)
-             (if (and (buffer-live-p buffer)
-                      (string-match "compilation" (buffer-name buffer))
-                      (string-match "finished" string))
-                 (progn
-                   (ide-message "compilation successfull" "green"))
-               (progn
-                 (ide-message "compilation failed" "red"))))))
+  (if ide-mode
+      (if (and
+           (buffer-live-p buffer)
+           (string-match "compilation" (buffer-name buffer))
+           (string-match "finished" string))
+	      (progn
+            (if ide-should-bury-compilation-buffer-on-success?
+                (progn (delete-other-windows)
+                       (if (string= "*compilation*" (buffer-name (current-buffer)))
+                           (switch-to-next-buffer)
+                         (bury-buffer "*compilation*"))))
+		    (ide-message "compilation successfull" "green"))
+	    (progn
+	      (ide-message "compilation failed" "red")))))
 
 (add-hook 'compilation-finish-functions 'ide-compilation-finish-handler)
 
@@ -957,7 +1011,8 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (if (not (ide-current-solution-valid?))
 	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
   
-  (concat (file-name-directory ide-current-solution) "TAGS"))
+  (concat (file-name-directory (concat (file-name-directory ide-current-solution) ide-solution-relative-index-path))
+          "TAGS"))
 
 (defun ide-create-tags ()
   "Create tags file from all files in the current solution."
@@ -1006,8 +1061,10 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
 
   (if (file-directory-p ide-current-solution)
-      (concat (file-name-as-directory ide-current-solution) ".csearchindex")
-    (concat (file-name-directory ide-current-solution) ".csearchindex")))
+      (concat (file-name-directory (concat (file-name-as-directory ide-current-solution) ide-solution-relative-index-path))
+              ".csearchindex")
+    (concat (file-name-directory (concat (file-name-directory ide-current-solution) ide-solution-relative-index-path))
+            ".csearchindex")))
 
 (defun ide-create-codesearch-index ()
   "Create codesearch index with all files in the current solution."
