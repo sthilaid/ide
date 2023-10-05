@@ -32,19 +32,19 @@
 
 ;; Can be customized to set a default solution to load
 (defcustom ide-default-current-solution ""
-  "The name of your default current solution file"
+  "The name of your default current solution file."
   :type 'string
   :group 'ide)
 
 ;; can be wet to a function that takes a file as parameter and outputs the next
 ;; file when cycling files with alt-o (ide-find-other-file)
 (defcustom ide-custom-get-next-file nil
-  "Funciton that can be used to override the default behaviour of (ide-find-other-file)"
-  :type 'function
+  "Funciton that can be used to override the default behaviour of (ide-find-other-file)."
+  :Type 'function
   :group 'ide)
 
 (defcustom ide-msbuild-path "\"C:/Program Files (x86)/MSBuild/14.0/Bin/MSBuild.exe\""
-  "Defines the path to MSBuild, used to compile visual studio solutions"
+  "Defines the path to MSBuild, used to compile visual studio solutions."
   :type 'string
   :group 'ide)
 
@@ -64,53 +64,53 @@
   :group 'ide)
 
 (defcustom ide-additionnal-source-paths nil
-  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`"
+  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`."
   :type 'sexp
   :group 'ide)
 
 (defcustom ide-extensions '("cpp" "h" "inl" "js" "html" "py")
-  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`"
+  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`."
   :type 'sexp
   :group 'ide)
 
 (defcustom ide-compile-directory-solution-pre ""
-  "Manual compilation options before the all files are added"
+  "Manual compilation options before the all files are added."
   :type 'string
   :group 'ide)
 
 (defcustom ide-compile-directory-solution-post ""
-  "Manual compilation options afterthe all files are added"
+  "Manual compilation options afterthe all files are added."
   :type 'string
   :group 'ide)
 
 (defcustom ide-compile-directory-solution-lambda nil
-  "if non nil, this function will be used to compile the files"
+  "if non nil, this function will be used to compile the files."
   :type 'function
   :group 'ide)
 
 (defcustom ide-cindex-path "cindex"
-  "Path to the codesearch cindex binary"
+  "Path to the codesearch cindex binary."
   :type 'string
   :group 'ide)
 
 (defcustom ide-csearch-path "csearch"
-  "Path to the codesearch csearch binary"
+  "Path to the codesearch csearch binary."
   :type 'string
   :group 'ide)
 
 (defcustom ide-use-local-codesearch-index? t
-  "Path to the codesearch csearch binary"
+  "Path to the codesearch csearch binary."
   :type 'boolean
   :group 'ide)
 
 
 (defcustom ide-should-bury-compilation-buffer-on-success? t
-  "if t, the compilation buffer is automatically buried when compilation succeeds"
+  "if t, the compilation buffer is automatically buried when compilation succeeds."
   :type 'boolean
   :group 'ide)
 
 (defcustom ide-solution-relative-index-path ""
-  "Path, relative to solution, where to place index files (TAGS, .csearchindex)"
+  "Path, relative to solution, where to place index files (TAGS, .csearchindex)."
   :type 'string
   :group 'ide)
 
@@ -120,7 +120,7 @@
   :group 'ide)
 
 (defcustom ide-solution-include-style 'quotes
-  "Style of markers for include statements ('quotes or 'brackets)"
+  "Style of markers for include statements ('quotes or 'brackets)."
   :type 'symbol
   :group 'ide)
 
@@ -131,12 +131,13 @@
 (setq ide-configs nil)
 
 (defun ide-config-create (config-name default-current-solution &rest optional-args)
-  "Create a new config and append it to the list of available configs. Optional args are 
+  "Apend new config. Optional args are the following.
+
         :extensions
         :additionnal-source-paths
         :vs-configurations
         :vs-platforms
-        :directory-solution-pre 
+        :directory-solution-pre
         :directory-solution-post
         :directory-solution-lambda
         :solution-relative-index-path
@@ -372,7 +373,7 @@
 ;; (ide-get-proper-solution-file "~/code/UnrealEngine/UE4.xcworkspace/contents.xcworkspacedata")
 
 (defun ide-get-substrings (str)
-  "Helper that will return a list of all the internal strings of the provided string. 
+  "Helper that will return a list of all the internal strings of the provided string.
 Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((start nil)
 		(substrings '()))
@@ -779,12 +780,10 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(let* ((file-no-dir (file-name-nondirectory file))
 		   (file-ext (file-name-extension file-no-dir))
 		   (next-ext (if (string-match-p "cpp" file-ext)
-						 (replace-regexp-in-string "cpp" "mold" file-ext)
-					   (if (string-match-p "mold" file-ext)
-						   (replace-regexp-in-string "mold" "h" file-ext)
-						 (if (string-match-p "h" file-ext)
+						 (replace-regexp-in-string "cpp" "h" file-ext)
+					   (if (string-match-p "h" file-ext)
 						   (replace-regexp-in-string "h" "cpp" file-ext)
-						 file-ext)))))
+						 file-ext))))
 	  (let ((next-file (concat (file-name-directory file) (file-name-base file-no-dir) "." next-ext)))
 		next-file))))
 
