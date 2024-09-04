@@ -32,19 +32,19 @@
 
 ;; Can be customized to set a default solution to load
 (defcustom ide-default-current-solution ""
-  "The name of your default current solution file."
+  "The name of your default current solution file"
   :type 'string
   :group 'ide)
 
 ;; can be wet to a function that takes a file as parameter and outputs the next
 ;; file when cycling files with alt-o (ide-find-other-file)
 (defcustom ide-custom-get-next-file nil
-  "Funciton that can be used to override the default behaviour of (ide-find-other-file)."
-  :Type 'function
+  "Funciton that can be used to override the default behaviour of (ide-find-other-file)"
+  :type 'function
   :group 'ide)
 
 (defcustom ide-msbuild-path "\"C:/Program Files (x86)/MSBuild/14.0/Bin/MSBuild.exe\""
-  "Defines the path to MSBuild, used to compile visual studio solutions."
+  "Defines the path to MSBuild, used to compile visual studio solutions"
   :type 'string
   :group 'ide)
 
@@ -64,53 +64,47 @@
   :group 'ide)
 
 (defcustom ide-additionnal-source-paths nil
-  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`."
+  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`"
   :type 'sexp
   :group 'ide)
 
 (defcustom ide-extensions '("cpp" "h" "inl" "js" "html" "py")
-  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`."
+  "List of additionnal directories to parse all and add all the files of extension `ide-extensions`"
   :type 'sexp
   :group 'ide)
 
 (defcustom ide-compile-directory-solution-pre ""
-  "Manual compilation options before the all files are added."
+  "Manual compilation options before the all files are added"
   :type 'string
   :group 'ide)
 
 (defcustom ide-compile-directory-solution-post ""
-  "Manual compilation options afterthe all files are added."
+  "Manual compilation options afterthe all files are added"
   :type 'string
   :group 'ide)
 
 (defcustom ide-compile-directory-solution-lambda nil
-  "if non nil, this function will be used to compile the files."
+  "if non nil, this function will be used to compile the files"
   :type 'function
   :group 'ide)
 
 (defcustom ide-cindex-path "cindex"
-  "Path to the codesearch cindex binary."
+  "Path to the codesearch cindex binary"
   :type 'string
   :group 'ide)
 
 (defcustom ide-csearch-path "csearch"
-  "Path to the codesearch csearch binary."
+  "Path to the codesearch csearch binary"
   :type 'string
   :group 'ide)
 
 (defcustom ide-use-local-codesearch-index? t
-  "Path to the codesearch csearch binary."
-  :type 'boolean
-  :group 'ide)
-
-
-(defcustom ide-should-bury-compilation-buffer-on-success? t
-  "if t, the compilation buffer is automatically buried when compilation succeeds."
+  "Path to the codesearch csearch binary"
   :type 'boolean
   :group 'ide)
 
 (defcustom ide-solution-relative-index-path ""
-  "Path, relative to solution, where to place index files (TAGS, .csearchindex)."
+  "Path, relative to solution, where to place index files (TAGS, .csearchindex)"
   :type 'string
   :group 'ide)
 
@@ -120,7 +114,7 @@
   :group 'ide)
 
 (defcustom ide-solution-include-style 'quotes
-  "Style of markers for include statements ('quotes or 'brackets)."
+  "Style of markers for include statements ('quotes or 'brackets)"
   :type 'symbol
   :group 'ide)
 
@@ -131,37 +125,32 @@
 (setq ide-configs nil)
 
 (defun ide-config-create (config-name default-current-solution &rest optional-args)
-  "Apend new config. Optional args are the following.
-
+  "Create a new config and append it to the list of available configs. Optional args are 
         :extensions
         :additionnal-source-paths
         :vs-configurations
         :vs-platforms
-        :directory-solution-pre
+        :directory-solution-pre 
         :directory-solution-post
         :directory-solution-lambda
         :solution-relative-index-path
         :solution-relative-include-path
         :solution-include-style
-        :custom-vars
    and must be passed last in key value format eg: :key value"
   
-  (let ((extensions                 (plist-get optional-args :extensions))
-        (additionnal-source-paths   (or (plist-get optional-args :additionnal-source-paths) ""))
-        (vs-configurations          (plist-get optional-args :vs-configurations))
-        (vs-platforms               (plist-get optional-args :vs-platforms))
-        (directory-solution-pre     (plist-get optional-args :directory-solution-pre))
-        (directory-solution-post    (plist-get optional-args :directory-solution-post))
-        (directory-solution-lambda  (plist-get optional-args :directory-solution-lambda))
+  (let ((extensions                         (plist-get optional-args :extensions))
+        (additionnal-source-paths           (or (plist-get optional-args :additionnal-source-paths) ""))
+        (vs-configurations                  (plist-get optional-args :vs-configurations))
+        (vs-platforms                       (plist-get optional-args :vs-platforms))
+        (directory-solution-pre             (plist-get optional-args :directory-solution-pre))
+        (directory-solution-post            (plist-get optional-args :directory-solution-post))
+        (directory-solution-lambda          (plist-get optional-args :directory-solution-lambda))
         (solution-relative-index-path       (plist-get optional-args :solution-relative-index-path))
         (ide-solution-relative-include-path (plist-get optional-args :solution-relative-include-path))
-        (ide-solution-include-style         (plist-get optional-args :solution-include-style))
-        (custom-vars                (plist-get optional-args :custom-vars))
-        )
+        (ide-solution-include-style         (plist-get optional-args :solution-include-style)))
     (setq ide-configs (cons (cons config-name (vector config-name default-current-solution extensions vs-configurations
                                                       vs-platforms additionnal-source-paths directory-solution-pre directory-solution-post
-                                                      directory-solution-lambda solution-relative-index-path
-                                                      ide-solution-relative-include-path ide-solution-include-style custom-vars))
+                                                      directory-solution-lambda solution-relative-index-path ide-solution-relative-include-path ide-solution-include-style))
                             ide-configs))))
 
 (defun ide-config-name (config)
@@ -199,9 +188,6 @@
 
 (defun ide-config-solution-include-style (config)
   (elt config 11))
-
-(defun ide-config-custom-vars (config)
-  (elt config 12))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide state manipulation
@@ -302,9 +288,7 @@
         (setq ide-solution-relative-index-path (ide-config-solution-relative-index-path config))
         (setq ide-solution-relative-include-path (ide-config-solution-relative-include-path config))
         (setq ide-solution-include-style (ide-config-solution-include-style config))
-        (let ((custom-vars (ide-config-custom-vars config)))
-          (message (format "custom-vars %s" custom-vars))
-          (apply 'custom-set-variables custom-vars))
+
         (ide-change-solution ide-default-current-solution)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -373,7 +357,7 @@
 ;; (ide-get-proper-solution-file "~/code/UnrealEngine/UE4.xcworkspace/contents.xcworkspacedata")
 
 (defun ide-get-substrings (str)
-  "Helper that will return a list of all the internal strings of the provided string.
+  "Helper that will return a list of all the internal strings of the provided string. 
 Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((start nil)
 		(substrings '()))
@@ -530,11 +514,13 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 									 parsed-project-file
 								   (concat project-file-dir parsed-project-file)))
 				   (absolute-project-file (expand-file-name project-file))
-				   (project-file-name (file-name-nondirectory absolute-project-file)))
-			  (ide-data-append-file-path absolute-project-file)
-			  (ide-data-append-file-name project-file-name)
-			  (ide-data-append-project-name project-name)
-			  (ide-data-append-project-path project-full-path))))))
+				   (project-file-name (file-name-nondirectory absolute-project-file))
+                   (project-file-ext (file-name-extension project-file-name)))
+              (if (member project-file-ext ide-extensions)
+                  (progn (ide-data-append-file-path absolute-project-file)
+                         (ide-data-append-file-name project-file-name)
+                         (ide-data-append-project-name project-name)
+                         (ide-data-append-project-path project-full-path))))))))
 
 (defun ide-parse-vs-project (project-file)
   "Will parse provided visual studio .sln file and accumulate all the source file referenced by that solution."
@@ -717,6 +703,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 		 ;; (choice-idx (cl-position choice options :test (lambda (x y) (string= x y))))
 		 ;; (file (nth choice-idx files))
+
 		 (choice-results (cl-loop for option being the element of options using (index i)
                                   for file being the element of files
                                   if (string= choice option) collect (list i option file)))
@@ -780,10 +767,12 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(let* ((file-no-dir (file-name-nondirectory file))
 		   (file-ext (file-name-extension file-no-dir))
 		   (next-ext (if (string-match-p "cpp" file-ext)
-						 (replace-regexp-in-string "cpp" "h" file-ext)
-					   (if (string-match-p "h" file-ext)
+						 (replace-regexp-in-string "cpp" "mold" file-ext)
+					   (if (string-match-p "mold" file-ext)
+						   (replace-regexp-in-string "mold" "h" file-ext)
+						 (if (string-match-p "h" file-ext)
 						   (replace-regexp-in-string "h" "cpp" file-ext)
-						 file-ext))))
+						 file-ext)))))
 	  (let ((next-file (concat (file-name-directory file) (file-name-base file-no-dir) "." next-ext)))
 		next-file))))
 
@@ -906,6 +895,12 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
   (message cmd))
 
+(defun ide-compile-internal (cmd)
+  (let ()
+    (setf compilation-find-file (lambda (marker filename directory &rest formats) 'nil))
+    (compile cmd)
+    (ide-post-compile cmd)))
+
 (defun ide-compile-vs-internal (target param-config param-platform build-refs?)
   "Internal function used to compile visual studio solution."
   (let* ((config	(if param-config
@@ -918,8 +913,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 							(concat "/p:BuildProjectReferences=" (if build-refs? "true" "false")))))
 	(ide-add-to-history 'ide-compile-vs-target-history target)
 	(ide-add-to-history 'ide-compile-cmd-history cmd)
-    (compile cmd)
-	(ide-post-compile cmd)))
+    (ide-compile-internal cmd)))
 
 (defun ide-compile-vs-solution ()
   (if (not (ide-current-solution-valid?))
@@ -954,8 +948,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
       (let ((cmd (concat (cl-reduce (lambda (acc x) (concat acc " \"" x "\"")) files :initial-value ide-compile-directory-solution-pre)
                          ide-compile-directory-solution-post)))
         (ide-add-to-history 'ide-compile-cmd-history cmd)
-        (compile cmd)
-        (ide-post-compile cmd)))))
+        (ide-compile-internal cmd)))))
 
 (defun ide-compile-solution ()
   "Compiles the current solution."
@@ -980,25 +973,25 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (if (not (boundp 'ide-compile-cmd-history))
 	  (message "Normal compilation must be ran at least once before 'ide-quick-compile' can be used. Please use 'ide-compile-project' or 'ide-compile-solution' first.")
 	(let ((cmd (car (eval 'ide-compile-cmd-history))))
-	  (compile cmd)
-	  (ide-post-compile cmd))))
+	  (ide-compile-internal cmd))))
 
 (defun ide-compilation-finish-handler (buffer string)
   "handles the *compilation buffer and prints a colored message after compilation"
-  (if ide-mode
-      (if (and
-           (buffer-live-p buffer)
-           (string-match "compilation" (buffer-name buffer))
-           (string-match "finished" string))
-	      (progn
-            (if ide-should-bury-compilation-buffer-on-success?
-                (progn (delete-other-windows)
-                       (if (string= "*compilation*" (buffer-name (current-buffer)))
-                           (switch-to-next-buffer)
-                         (bury-buffer "*compilation*"))))
-		    (ide-message "compilation successfull" "green"))
-	    (progn
-	      (ide-message "compilation failed" "red")))))
+  ;; (let* ((result-buffer-name "*compilation-result*")
+  ;;        (result-buffer (get-buffer-create result-buffer-name)))
+  ;;   (switch-to-buffer result-buffer)
+  ;;   (special-mode)
+
+  (if (string-match "compilation" (buffer-name buffer))
+      (progn (switch-to-buffer "*compilation*")
+             (delete-other-windows)
+             (if (and (buffer-live-p buffer)
+                      (string-match "compilation" (buffer-name buffer))
+                      (string-match "finished" string))
+                 (progn
+                   (ide-message "compilation successfull" "green"))
+               (progn
+                 (ide-message "compilation failed" "red"))))))
 
 (add-hook 'compilation-finish-functions 'ide-compilation-finish-handler)
 
@@ -1113,14 +1106,12 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                       (case-sensitive-input (y-or-n-p "case sensitive search?")))
                  (list flag-input input-search case-sensitive-input)))
 
-  (if (and nil (require 'codesearch nil t)) ; not using codesearch ext for now...
-      (codesearch searched-str is-case-sensitive?)
-    (let ((cindex-file (ide-get-codesearch-index)))
+  (let ((cindex-file (ide-get-codesearch-index)))
     (setenv "CSEARCHINDEX" (if ide-use-local-codesearch-index? cindex-file ""))
     (grep-find (concat ide-csearch-path " -n "
                        (if search-flag (concat "-f " search-flag " ") "")
                        (if is-case-sensitive? "" "-i ")
-                       "\"" searched-str "\"")))))
+                       "\"" searched-str "\""))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
