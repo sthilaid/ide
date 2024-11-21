@@ -464,11 +464,12 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((path-name (file-name-nondirectory (directory-file-name original-path))))
     (if (or (seq-empty-p extension)
             (seq-some (lambda (ext) (string-suffix-p ext file)) extension))
-        (progn (ide-data-append-file-path (expand-file-name file))
-                       ;;(message (concat "adding file " file))
-                       (ide-data-append-file-name (file-name-nondirectory file))
-                       (ide-data-append-project-name path-name)
-                       (ide-data-append-project-path original-path)))))
+        (if (member extension ide-extensions)
+            (progn (ide-data-append-file-path (expand-file-name file))
+                   ;;(message (concat "adding file " file))
+                   (ide-data-append-file-name (file-name-nondirectory file))
+                   (ide-data-append-project-name path-name)
+                   (ide-data-append-project-path original-path))))))
 
 (defun ide-parse-folder (original-folder current-folder extensions)
   "Will try to gather all files of `extension` in `folder`"
