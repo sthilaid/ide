@@ -459,17 +459,17 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; additionnal folder parsing
 
-(defun ide-try-to-add-file (original-path file extension)
+(defun ide-try-to-add-file (original-path file extensions)
   "Tries to add the file into the solution data, if it has the right extension"
-  (let ((path-name (file-name-nondirectory (directory-file-name original-path))))
-    (if (or (seq-empty-p extension)
-            (seq-some (lambda (ext) (string-suffix-p ext file)) extension))
-        (if (member extension ide-extensions)
-            (progn (ide-data-append-file-path (expand-file-name file))
-                   ;;(message (concat "adding file " file))
-                   (ide-data-append-file-name (file-name-nondirectory file))
-                   (ide-data-append-project-name path-name)
-                   (ide-data-append-project-path original-path))))))
+  (let ((path-name (file-name-nondirectory (directory-file-name original-path)))
+        (extension (file-name-extension file)))
+    (if (or (seq-empty-p extensions)
+            (member extension extensions))
+        (progn (ide-data-append-file-path (expand-file-name file))
+               ;;(message (concat "adding file " file))
+               (ide-data-append-file-name (file-name-nondirectory file))
+               (ide-data-append-project-name path-name)
+               (ide-data-append-project-path original-path)))))
 
 (defun ide-parse-folder (original-folder current-folder extensions)
   "Will try to gather all files of `extension` in `folder`"
@@ -898,6 +898,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 
 (defun ide-compile-internal (cmd)
   (let ()
+    (if (or (not ide-current-solution) (string= ide-current-solution "")) (error "need to ensure to have loaded a config before compiling"))
     (setf compilation-find-file (lambda (marker filename directory &rest formats) 'nil))
     (compile cmd)
     (ide-post-compile cmd)))
