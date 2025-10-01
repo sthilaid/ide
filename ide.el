@@ -118,6 +118,11 @@
   :type 'symbol
   :group 'ide)
 
+(defcustom ide-cleanup-include-file-key ""
+  "Will cleanup the include path up to the provided key, if any"
+  :type 'string
+  :group 'ide)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide config
 
@@ -714,6 +719,18 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(find-file file)
 	(message (concat "opened file: " (file-relative-name file (file-name-directory ide-current-solution))))))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; try-to-cleanup-relative-file
+
+(defun try-to-cleanup-relative-file (relative-file)
+  (if (string= ide-cleanup-include-file-key "")
+      relative-file
+    (let ((index (string-search ide-cleanup-include-file-key relative-file)))
+  (if index
+      (substring relative-file (+ (length ide-cleanup-include-file-key) index) (length relative-file))
+    relative-file))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide include file (c/cpp)
 
@@ -742,14 +759,15 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                                          (file-name-directory ide-current-solution)
                                        ide-solution-relative-include-path))
          (relative-file (file-relative-name file include-relative-path-base))
-         (file-wrap-fn (cond ((eq ide-solution-include-style 'brackets) (lambda (f) (concat "<" relative-file ">")))
-                             (t (lambda (f) (concat "\"" relative-file "\""))))))
+         (cleaned-up-relative-file (try-to-cleanup-relative-file relative-file))
+         (file-wrap-fn (cond ((eq ide-solution-include-style 'brackets) (lambda (f) (concat "<" cleaned-up-relative-file ">")))
+                             (t (lambda (f) (concat "\"" cleaned-up-relative-file "\""))))))
     (progn ;;save-excursion
       (goto-char 0)
       (search-forward "#include" nil t 3)
       (beginning-of-line)
       (indent-for-tab-command)
-      (let ((include-txt (concat "#include " (funcall file-wrap-fn relative-file) "\n")))
+      (let ((include-txt (concat "#include " (funcall file-wrap-fn cleaned-up-relative-file) "\n")))
         (insert include-txt)
         (forward-line -1)
         (message (concat "added include: '" include-txt "'"))))))
