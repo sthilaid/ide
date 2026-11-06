@@ -1171,7 +1171,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                                              (make-temp-name "ide-create-fgr-index")
                                              (concat ide-fgr-path " " cmd " "
                                                      (cl-reduce (lambda (acc x) (concat acc "--include *." x " ")) ide-extensions :initial-value " ")
-                                                     (ide-get-solution-directory))))
+                                                     (file-name-directory (ide-get-fgr-index)))))
           (set-process-sentinel ide-last-create-cindex-process 'ide-create-fgr-index-process-sentinel))))))
 
 (defun ide-create-fgr-index ()
@@ -1204,7 +1204,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                                                      nil 'ide-grep-history))
                       (input-search (if (string= search-raw-input "") word search-raw-input))
                       (flag-raw-input (read-string (concat "file regexp: ")
-                                                   nil 'ide-grep-history))
+                                                   "*.{h,cpp,mold}" 'ide-grep-flag-history))
                       (flag-input (if (string= flag-raw-input "") nil flag-raw-input))
                       (case-sensitive-input (y-or-n-p "case sensitive search?")))
                  (list flag-input input-search case-sensitive-input)))
@@ -1215,8 +1215,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                        "--format grep --no-auto-update "
                        "--index " index-file " "
                        (if search-flag (concat "--include " search-flag " ") "")
-                       (if is-case-sensitive? "" "-i ")
-                       ))))
+                       (if is-case-sensitive? "" "-i ")))))
 
 (defun ide-fgr-daemon (cmd)
   "start an fgr daemon process in a dedicated buffer and side window. When the process ends, 'q' in that window will kill it."
@@ -1225,7 +1224,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (let ((process-buffer-name (make-temp-name "ide-fgr-daemon")))
     (let ((daemon-process (start-process-shell-command "ide-fgr-daemon"
 							                           process-buffer-name
-                                                       (concat ide-fgr-path " daemon " cmd " " (file-name-directory (ide-get-fgr-index))))))
+                                                       (concat ide-fgr-path " daemon " cmd " " (file-name-directory (ide-get-fgr-index)) " --output " (ide-get-fgr-index)))))
       
       (let ((process-window (split-window-right)))
         (set-window-buffer process-window process-buffer-name)
