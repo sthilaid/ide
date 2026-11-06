@@ -1,4 +1,4 @@
-;;; ide.el --- minor mode for working is solution projets  -*- Mode: Emacs-Lisp -*-
+;;; ide.el --- minor mode for working is solution projets  -*- Mode: Emacs-Lisp; lexical-binding: t; -*-
 ;;
 ;; Copyright (C) 2018 David St-Hilaire
 ;;
@@ -101,6 +101,11 @@
 (defcustom ide-use-local-codesearch-index? t
   "Path to the codesearch csearch binary"
   :type 'boolean
+  :group 'ide)
+
+(defcustom ide-fgr-path "fgr"
+  "Path to the fgr binary"
+  :type 'string
   :group 'ide)
 
 (defcustom ide-solution-relative-index-path ""
@@ -269,6 +274,12 @@
 	  (ide-mode -1))
   (message "ide-data was reset..."))
 
+(defun ide-get-solution-directory ()
+  "Returns the folder where the solution is located"
+  (if (file-directory-p ide-current-solution)
+      (file-name-as-directory ide-current-solution)
+    (file-name-directory ide-current-solution)))
+
 (define-error 'ide-error "unhandled IDE error occured...")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -326,6 +337,8 @@
 							  " [parsed " (number-to-string file-count) " files]")))
 			(message msg)
 			(ide-mode t)
+            (if (file-exists-p (ide-get-fgr-index))
+                (ide-fgr-daemon "start"))
 			msg)))
 	(ide-error
 	 (ide-reset-data)
@@ -1072,11 +1085,8 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
   (if (not (ide-current-solution-valid?))
 	  (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
 
-  (if (file-directory-p ide-current-solution)
-      (concat (file-name-directory (concat (file-name-as-directory ide-current-solution) ide-solution-relative-index-path))
-              ".csearchindex")
-    (concat (file-name-directory (concat (file-name-directory ide-current-solution) ide-solution-relative-index-path))
-            ".csearchindex")))
+  (concat (file-name-directory (concat (ide-get-solution-directory) ide-solution-relative-index-path))
+          ".csearchindex"))
 
 (defun ide-create-codesearch-index ()
   "Create codesearch index with all files in the current solution."
@@ -1133,6 +1143,99 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
                        (if is-case-sensitive? "" "-i ")
                        "\"" searched-str "\""))))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; fgr support
+
+(defun ide-get-fgr-index ()
+  "Returns the fgr index path for this solution."
+  (if (not (ide-current-solution-valid?))
+      (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+
+  (expand-file-name (concat (concat (ide-get-solution-directory) ide-solution-relative-index-path)
+                            ".fgr")))
+
+(defun ide-fgr-index-command (cmd)
+  "Run fastgrep command on index."
+  (let ((should-skip? (and ide-last-create-cindex-process
+                           (process-live-p ide-last-create-cindex-process)
+                           (not (y-or-n-p "ide-create-codesearch-index process already running, restart it?")))))
+    (if should-skip?
+        (message "Skipped restarting codesearch index generation.")
+      (let* ((index-file (ide-get-fgr-index)))
+        (let* ((files (ide-data-file-paths)))
+          (message (concat "generating " (if ide-use-local-codesearch-index? index-file "global index") "..."))
+          (setq ide-last-create-cindex-process-stat-time (current-time))
+          (setq ide-last-create-cindex-process
+                (start-process-shell-command "ide-create-fgr-index"
+                                             (make-temp-name "ide-create-fgr-index")
+                                             (concat ide-fgr-path " " cmd " "
+                                                     (cl-reduce (lambda (acc x) (concat acc "--include *." x " ")) ide-extensions :initial-value " ")
+                                                     (ide-get-solution-directory))))
+          (set-process-sentinel ide-last-create-cindex-process 'ide-create-fgr-index-process-sentinel))))))
+
+(defun ide-create-fgr-index ()
+  "Create fgr index with all files in the current solution."
+  (interactive)
+  (if (not (ide-current-solution-valid?))
+      (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+
+  (ide-fgr-index-command (concat "index " "--output " (ide-get-fgr-index))))
+
+(defun ide-update-fgr-index ()
+  "Update fgr index with all files in the current solution."
+  (interactive)
+  (if (not (ide-current-solution-valid?))
+      (signal 'ide-error "not project set... use 'ide-change-solution' to set it first"))
+
+  (ide-fgr-index-command (concat "update --index " (ide-get-fgr-index))))
+
+(defun ide-create-fgr-index-process-sentinel (process event)
+  "Sentinel called when a ide-create-cindex process changes status."
+  (let* ((duration (time-subtract (current-time) ide-last-create-cindex-process-stat-time))
+         (duration-str (format-time-string "%M minutes %S secs" duration)))
+    (cond ((string= event "finished\n") (progn (ide-message (concat (ide-get-codesearch-index) " updated in " duration-str ".") "green")))
+          (t (ide-message (concat "'ide-create-fgr-index' failed after " duration-str " with event: " event) "red")))))
+
+(defun ide-fgr (search-flag searched-str is-case-sensitive?)
+  "fgr expression in entire solution."
+  (interactive (let* ((word (ide-current-word-or-region))
+                      (search-raw-input (read-string (concat "fgr regexp (default: \"" word "\"): ")
+                                                     nil 'ide-grep-history))
+                      (input-search (if (string= search-raw-input "") word search-raw-input))
+                      (flag-raw-input (read-string (concat "file regexp: ")
+                                                   nil 'ide-grep-history))
+                      (flag-input (if (string= flag-raw-input "") nil flag-raw-input))
+                      (case-sensitive-input (y-or-n-p "case sensitive search?")))
+                 (list flag-input input-search case-sensitive-input)))
+
+  (let ((index-file (ide-get-fgr-index)))
+    (setq default-directory (file-name-directory index-file))
+    (grep-find (concat ide-fgr-path " \"" searched-str "\" "
+                       "--format grep --no-auto-update "
+                       "--index " index-file " "
+                       (if search-flag (concat "--include " search-flag " ") "")
+                       (if is-case-sensitive? "" "-i ")
+                       ))))
+
+(defun ide-fgr-daemon (cmd)
+  "start an fgr daemon process in a dedicated buffer and side window. When the process ends, 'q' in that window will kill it."
+  (interactive (list (completing-read "fgr daemon command: " '("start" "stop" "status") nil t nil 'fgr-daemon-hist)))
+  
+  (let ((process-buffer-name (make-temp-name "ide-fgr-daemon")))
+    (let ((daemon-process (start-process-shell-command "ide-fgr-daemon"
+							                           process-buffer-name
+                                                       (concat ide-fgr-path " daemon " cmd " " (file-name-directory (ide-get-fgr-index))))))
+      
+      (let ((process-window (split-window-right)))
+        (set-window-buffer process-window process-buffer-name)
+        (set-process-sentinel daemon-process (lambda (p str) (message (concat "daemon " cmd " process " str))
+                                               (with-current-buffer process-buffer-name
+                                                 (select-window process-window)
+                                                 (local-set-key (kbd "q") (lambda () (interactive) (kill-buffer process-buffer-name)))))))
+      (with-current-buffer process-buffer-name
+        (special-mode)))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ide mode definition
 
@@ -1145,7 +1248,7 @@ Eg: '(allo \"yes\" bye \"no\") would return '(\"yes\" \"no\")"
 	(define-key map (kbd "M-'")     'ide-include-file)
 	(define-key map (kbd "M-o")     'ide-find-other-file)
 	(define-key map (kbd "C-M-o")   'ide-find-and-create-other-file)
-    (define-key map (kbd "C-M-]")   'ide-codesearch)
+    (define-key map (kbd "C-M-]")   'ide-fgr)
 
 	(define-key map (kbd "C-M-i")   'ide-include-file)
 	(define-key map (kbd "<f7>")	'ide-quick-compile)
